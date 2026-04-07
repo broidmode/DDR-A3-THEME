@@ -1,5 +1,12 @@
 local t = Def.ActorFrame{};
 
+local storedStyle = getenv("ForceStyle")
+if storedStyle then
+  GAMESTATE:SetCurrentStyle(storedStyle)
+  setenv("ForceStyle", nil)
+end
+
+
 local TwoPart = Def.ActorFrame{
 	StartSelectingStepsMessageCommand=function(s) s:AddChildFromPath(THEME:GetPathB("ScreenSelectMusic","overlay/TwoPartDiff")) end,
 	SongUnchosenMessageCommand=function(s) 
