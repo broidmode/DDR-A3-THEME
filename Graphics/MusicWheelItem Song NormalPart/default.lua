@@ -3,29 +3,15 @@ local cursor = Def.ActorFrame{};
 local diff = Def.ActorFrame{};
 local top
 
-local function quadButton(z)
-	local t = Def.Quad{
-		InitCommand= function(self) 
-			self:z(z)
-		end;
-		MouseLeftClickMessageCommand = function(self)
-			if isOver(self) then
-				addPressedActors(self)
-			end
-		end;
-		TopPressedCommand = function(self)
-		end;
-	}
-
-	return t
-end
-
 local function GetExpandedSectionIndex()
-	local mWheel = SCREENMAN:GetTopScreen():GetMusicWheel()
-	local curSections = mWheel:GetCurrentSections()
-	for i=1, #curSections do
-		if curSections[i] == GAMESTATE:GetExpandedSectionName() then
-			return i-1
+	local mWheel
+	if SCREENMAN:GetTopScreen():GetChild("MusicWheel")  ~= nil then
+		mWheel = SCREENMAN:GetTopScreen():GetChild("MusicWheel")
+		local curSections = mWheel:GetCurrentSections()
+		for i=1, #curSections do
+			if curSections[i] == GAMESTATE:GetExpandedSectionName() then
+				return i-1
+			end
 		end
 	end
 end
@@ -100,37 +86,6 @@ return Def.ActorFrame{
 			self:name(tostring(params.Index))
 		end
 	end;
-	quadButton(1)..{
-		InitCommand=function(s) s:visible(false) end,
-		TopPressedCommand=function(self)
-			local newIndex = tonumber(self:GetParent():GetName())
-			local wheel = SCREENMAN:GetTopScreen():GetChild("MusicWheel")
-			local size = wheel:GetNumItems()
-			local move = newIndex-wheel:GetCurrentIndex()
-
-		if math.abs(move)>math.floor(size/2) then
-			if newIndex > wheel:GetCurrentIndex() then
-				move = (move)%size-size
-			else
-				move = (move)%size
-			end
-		end
-
-		wheel:Move(move)
-		wheel:Move(0)
-
-		-- TODO: play sounds.
-		if move == 0 and wheel:GetSelectedType() == 'WheelItemDataType_Section' then
-			if wheel:GetSelectedSection() == curFolder then
-				wheel:SetOpenSection("")
-				curFolder = ""
-			else
-				wheel:SetOpenSection(wheel:GetSelectedSection())
-				curFolder = wheel:GetSelectedSection()
-			end
-		end
-	end,
-	};
 	Def.Sprite{
 		Texture=Model().."card",
 		InitCommand=function(s) s:zoom(0.94) end,
@@ -234,7 +189,7 @@ return Def.ActorFrame{
 		SetMessageCommand=function(s,p)
 			local song = p.Song
 			if song then
-				if song:IsLong() then
+				if song:IsLong() or song:IsMarathon() then
 					s:visible(true)
 				else
 					s:visible(false)

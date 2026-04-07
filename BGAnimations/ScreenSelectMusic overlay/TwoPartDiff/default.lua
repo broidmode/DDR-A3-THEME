@@ -294,6 +294,7 @@ end;
 local t = Def.ActorFrame{
 	InitCommand=function(s)
 		s:sleep(0.5):queuecommand("Add")
+		SCREENMAN:GetTopScreen():SetPrevScreenName("ScreenSelectMusic")
 	end,
 	AddCommand=function(s)
 		SCREENMAN:GetTopScreen():AddInputCallback(DiffInputHandler)

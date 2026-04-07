@@ -3,8 +3,14 @@ local t = Def.ActorFrame{};
 if IsGoldenLeague() then
 	t[#t+1] = Def.ActorFrame{
 		Def.ActorFrame{
-			AnimCloseCommand=function(s) SOUND:PlayOnce(THEME:GetPathS("","DoorClose")) end,
-			AnimOpenCommand=function(s) SOUND:PlayOnce(THEME:GetPathS("","DoorOpen")) end,
+			AnimCloseCommand=function(s) 
+				local sound = THEME:GetPathS("","DoorClose")
+				SOUND:PlayOnce(StreamingSound(sound)) 
+			end,
+			AnimOpenCommand=function(s) 
+				local sound = THEME:GetPathS("","DoorOpen")
+				SOUND:PlayOnce(StreamingSound(sound)) 
+			end,
 			AnimFailedCloseCommand=function(s) s:playcommand("AnimClose") end,
 			AnimFailedOpenCommand=function(s) s:playcommand("AnimOpen") end,
 		};
@@ -58,6 +64,7 @@ if IsGoldenLeague() then
 			AnimOpenCommand=function(s) s:diffusealpha(0.4):sleep(0.2):linear(0.1):diffusealpha(0) end,
 			AnimFailedCloseCommand=function(s) s:playcommand("AnimClose") end,
 			AnimFailedOpenCommand=function(s) s:playcommand("AnimOpen") end,
+			AnimStandCommand=function(s) s:diffusealpha(0.4) end,
 		};
 		Def.ActorFrame{
 			InitCommand=function(s) s:Center():blend('BlendMode_Add'):diffusealpha(0) end,
@@ -205,8 +212,14 @@ if IsGoldenLeague() then
 else
 	t[#t+1] = Def.ActorFrame{
 		Def.ActorFrame{
-			AnimCloseCommand=function(s) SOUND:PlayOnce(THEME:GetPathS("","DoorClose")) end,
-			AnimOpenCommand=function(s) SOUND:PlayOnce(THEME:GetPathS("","DoorOpen")) end,
+			AnimCloseCommand=function(s) 
+				local sound = THEME:GetPathS("","DoorClose")
+				SOUND:PlayOnce(StreamingSound(sound)) 
+			end,
+			AnimOpenCommand=function(s) 
+				local sound = THEME:GetPathS("","DoorOpen")
+				SOUND:PlayOnce(StreamingSound(sound)) 
+			end,
 			AnimFailedCloseCommand=function(s) s:playcommand("AnimClose") end,
 			AnimFailedOpenCommand=function(s) s:playcommand("AnimOpen") end,
 		};

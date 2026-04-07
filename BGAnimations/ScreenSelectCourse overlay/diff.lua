@@ -1,23 +1,38 @@
 local pn = ...
 local yspacing = 39
 local DiffList = Def.ActorFrame{};
+local function GetTrailForDiff(course, st, diff)
+    for t in ivalues(course:GetAllTrails()) do
+        if t:GetDifficulty() == diff and t:GetStepsType() == st then
+            return t
+        end
+    end
+    return nil
+end
 
 local function DrawDiffListItem(diff)
 	local DifficultyListItem = Def.ActorFrame{ 
 		InitCommand=function(s) s:xy(pn==PLAYER_1 and -3 or 3,(Difficulty:Reverse()[diff] * yspacing)-80) end,
 		SetCommand=function(self)
-			local st=GAMESTATE:GetCurrentStyle():GetStepsType()
-			local song=GAMESTATE:GetCurrentCourse()
-			if song then
-				if diff == "Difficulty_Beginner" or diff == "Difficulty_Easy" or diff == "Difficulty_Medium" or diff == "Difficulty_Hard" or diff == "Difficulty_Challenge" then
-					self:diffusealpha(1)
-				else
-					self:diffusealpha(0.5)
-				end
-			else
-				self:diffusealpha(0.5)
-			end;
-		end;
+    local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+    local course = GAMESTATE:GetCurrentCourse()
+
+    if course then
+        local trails = course:GetAllTrails()
+        local hasDiff = false
+
+        for t in ivalues(trails) do
+            if t:GetDifficulty() == diff and t:GetStepsType() == st then
+                hasDiff = true
+                break
+            end
+        end
+
+        self:visible(hasDiff)
+    else
+        self:visible(false)
+    end
+end;
 		Def.BitmapText{
 			Font="_dispatrox 32px",
 			InitCommand=function(self)
@@ -32,6 +47,159 @@ local function DrawDiffListItem(diff)
 				InitCommand=function(s) s:setsize(26,25):diffuse(CustomDifficultyToColor(diff)) end,
 			};
 		};
+		Def.BitmapText{
+			Font="_impact 32px",
+			Name="Meter";
+			InitCommand=function(s) s:draworder(99):strokecolor(Color.Black):zoom(0.75):x(-26) end,
+			SetCommand=function(self)
+				self:settext("")
+				local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+				local course = GAMESTATE:GetCurrentCourse()
+				if course then
+					local trails = course:GetAllTrails()
+					for t in ivalues(trails) do
+						if t:GetDifficulty() == diff and t:GetStepsType() == st then
+							self:settext(t:GetMeter())
+							break
+						end
+					end
+				end
+			end;
+		};
+		Def.BitmapText{
+      Font="_geo 957 Bold",
+      Name="Score";
+      InitCommand=function(s) s:draworder(5):diffuse(Color.White):xy(80,-1):zoom(1.1):halign(1):maxwidth(80) end,
+      SetCommand=function(self) 
+		self:settext("")
+		local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+		local course = GAMESTATE:GetCurrentCourse()
+
+		if course then
+			local trail = GetTrailForDiff(course, st, diff)
+			if trail then
+				local profile
+				if PROFILEMAN:IsPersistentProfile(pn) then
+					profile = PROFILEMAN:GetProfile(pn)
+				else
+					profile = PROFILEMAN:GetMachineProfile()
+				end
+
+			local scorelist = profile:GetHighScoreList(course, trail)
+			local scores = scorelist:GetHighScores()
+				if scores[1] then
+					local topscore = scores[1]:GetScore()
+					if topscore > 0 then
+						self:settext(commify(topscore))
+					end
+				end
+			end
+		end
+	end;
+    };
+	Def.ActorFrame{
+		InitCommand=function(s) s:x(90) end,
+		Def.Sprite{
+    InitCommand=function(s) s:xy(24,2) end,
+    SetCommand=function(self)
+        local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+        local course = GAMESTATE:GetCurrentCourse()
+        local profile = MachineOrProfile(pn)
+
+        if course then
+            local trail = GetTrailForDiff(course, st, diff)
+
+            if trail then
+                local scorelist = profile:GetHighScoreList(course, trail)
+                local scores = scorelist:GetHighScores()
+
+                if scores[1] then
+                    local topscore = scores[1]
+
+                    local misses = topscore:GetTapNoteScore("TapNoteScore_Miss")
+                        + topscore:GetTapNoteScore("TapNoteScore_CheckpointMiss")
+                        + topscore:GetTapNoteScore("TapNoteScore_HitMine")
+                        + topscore:GetTapNoteScore("TapNoteScore_W5")
+
+                    local goods = topscore:GetTapNoteScore("TapNoteScore_W4")
+                    local greats = topscore:GetTapNoteScore("TapNoteScore_W3")
+                    local perfects = topscore:GetTapNoteScore("TapNoteScore_W2")
+                    local marvelous = topscore:GetTapNoteScore("TapNoteScore_W1")
+
+                    if misses == 0 and topscore:GetScore() > 0 and (marvelous+perfects) > 0 then
+                        if (greats+perfects) == 0 then
+                            self:Load(THEME:GetPathG("","ScreenSelectMusic/MarvelousFullCombo_ring"))
+                        elseif greats == 0 then
+                            self:Load(THEME:GetPathG("","ScreenSelectMusic/PerfectFullCombo_ring"))
+                        elseif (misses+goods) == 0 then
+                            self:Load(THEME:GetPathG("","ScreenSelectMusic/GreatFullCombo_ring"))
+                        elseif misses == 0 then
+                            self:Load(THEME:GetPathG("","ScreenSelectMusic/GoodFullCombo_ring"))
+                        end
+
+                        self:visible(true):zoom(0.66):spin():effectmagnitude(0,0,170)
+                    else
+                        self:visible(false)
+                    end
+                else
+                    self:visible(false)
+                end
+            else
+                self:visible(false)
+            end
+        else
+            self:visible(false)
+        end
+    end;
+};
+      Def.Quad{
+    Name="Grade",
+    InitCommand=function(s) s:draworder(5):visible(false):zoom(1.1):x(8) end,
+    SetCommand=function(self)
+        local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+        local course = GAMESTATE:GetCurrentCourse()
+
+        if course then
+            local trail = GetTrailForDiff(course, st, diff)
+
+            if trail then
+                local profile
+                if PROFILEMAN:IsPersistentProfile(pn) then
+                    profile = PROFILEMAN:GetProfile(pn)
+                else
+                    profile = PROFILEMAN:GetMachineProfile()
+                end
+
+                local scorelist = profile:GetHighScoreList(course, trail)
+                local scores = scorelist:GetHighScores()
+
+                if scores[1] then
+                    local top = scores[1]
+                    local grade = top:GetGrade()
+
+                    if top:GetScore() > 1 then
+                        if grade == 'Grade_Failed' then
+                            self:LoadBackground(THEME:GetPathG("","ScreenSelectMusic/Grade Failed"))
+                        else
+                            self:LoadBackground(THEME:GetPathG("ScreenSelectMusic/Grade", ToEnumShortString(grade)))
+                        end
+
+                        self:visible(true)
+                    else
+                        self:visible(false)
+                    end
+                else
+                    self:visible(false)
+                end
+            else
+                self:visible(false)
+            end
+        else
+            self:visible(false)
+        end
+    end;
+};
+    };
 	};
 	return DifficultyListItem
 end

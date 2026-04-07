@@ -11,7 +11,7 @@ return Def.ActorFrame{
 		end
 	end,
 	ShowCommand=function(s)
-		if AnimPlayed == false then 
+		if not AnimPlayed then
 			s:diffusealpha(0):linear(0.05):diffusealpha(0.75)
 			s:linear(0.1):diffusealpha(0.25):linear(0.1):diffusealpha(1)
 			s:queuecommand("UpdateShow")
@@ -19,7 +19,7 @@ return Def.ActorFrame{
 	end,
 	UpdateShowCommand=function(s) AnimPlayed = true end,
 	HideCommand=function(s)
-		if AnimPlayed == true then
+        if AnimPlayed then
 			s:diffusealpha(1):sleep(0.05):diffusealpha(0):sleep(0.05):diffusealpha(0.5)
 			s:sleep(0.05):diffusealpha(0):sleep(0.05):diffusealpha(0.25):sleep(0.05)
 			s:linear(0.05):diffusealpha(0)
@@ -63,26 +63,72 @@ return Def.ActorFrame{
 				InitCommand=cmd(xy,58,16;effectclock,'beatnooffset';SetAllStateDelays,1);
 			};
 			LoadFont("Bpm")..{
-			InitCommand=cmd(zoom,1.4;xy,148,1);
-			SetCommand=function(self)
-				local song = GAMESTATE:GetCurrentSong();
-				if song then
-					local bpmtext;
-					bpmtext = song:GetDisplayBpms();
-						if bpmtext[1] == bpmtext[2] then
-							bpmtext = round(bpmtext[1],0);
-						else
-							bpmtext = string.format("%d\nx%3d",round(bpmtext[1],0),round(bpmtext[2],0));
+				InitCommand=function(s)
+					s:zoom(1.4):x(148):horizalign(right):vertalign(top)
+					s:queuecommand("UpdateBPM")
+				end,
+				UpdateBPMCommand=function(self)
+					local song = GAMESTATE:GetCurrentSong()
+					if not song then 
+						self:settext("") 
+						return 
+					end
+
+					local bpms = {}
+
+					for _,pn in ipairs({PLAYER_1, PLAYER_2}) do
+						if GAMESTATE:IsHumanPlayer(pn) then
+							local steps = GAMESTATE:GetCurrentSteps(pn)
+							if steps then
+								local timing = steps:GetTimingData():GetActualBPM()
+								table.insert(bpms, timing[1])
+								table.insert(bpms, timing[2])
+							end
 						end
-					self:horizalign(right);
-					self:vertalign(top);
-					self:settext(bpmtext);
-					self:visible(true);
-				else
-					self:visible(false);
-				end
-			end;
-		};
+					end
+
+					if #bpms == 0 then
+						self:settext("")
+						return
+					end
+
+					table.sort(bpms)
+
+					local min = round(bpms[1],0)
+					local max = round(bpms[#bpms],0)
+
+					if min == max then
+						self:settext(min)
+					else
+						self:settext(string.format("%d\nx%d", min, max))
+					end
+				end,
+				CurrentStepsP1ChangedMessageCommand=function(self) self:queuecommand("UpdateBPM") end,
+				CurrentStepsP2ChangedMessageCommand=function(self) self:queuecommand("UpdateBPM") end,
+				CurrentSongChangedMessageCommand=function(self) self:queuecommand("UpdateBPM") end,
+			},
+			
+			-- LoadFont("Bpm")..{
+			-- InitCommand=cmd(zoom,1.4;xy,148,1);
+			-- SetCommand=function(self)
+				-- local song = GAMESTATE:GetCurrentSong();
+				-- if song then
+					-- local bpmtext;
+					-- bpmtext = song:GetDisplayBpms();
+						-- if bpmtext[1] == bpmtext[2] then
+							-- bpmtext = round(bpmtext[1],0);
+						-- else
+							-- bpmtext = string.format("%d\nx%3d",round(bpmtext[1],0),round(bpmtext[2],0));
+						-- end
+					-- self:horizalign(right);
+					-- self:vertalign(top);
+					-- self:settext(bpmtext);
+					-- self:visible(true);
+				-- else
+					-- self:visible(false);
+				-- end
+			-- end;
+		-- };
 	};
 	Def.ActorFrame{
 		Name="Jacket";

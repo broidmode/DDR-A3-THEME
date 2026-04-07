@@ -18,7 +18,7 @@ return Def.ActorFrame {
 		end,
 	};
 	Def.Sprite{
-		Texture=THEME:GetPathB("ScreenSelectMusic","Overlay/StageDisplay/"..Model().."Course"),
+		Texture=THEME:GetPathB("ScreenSelectMusic","Overlay/StageDisplay/"..Model().."Nonstop"),
 		InitCommand=function(s) s:xy(96,30.5) end,
 	};
 };

@@ -18,36 +18,22 @@ end
 local screen = SCREENMAN:GetTopScreen();
 
 
-local rownames;
-if GAMESTATE:IsExtraStage() or GAMESTATE:IsExtraStage2() then
-	rownames = { 
-		"Speed", 
-		"Accel", 
-		"Appearance", 
-		"Turn", 
-		"Hide", 
-		"Scroll", 
-		"NoteSkins", 
-		"Remove", 
-		"Freeze", 
-		"Jump",
-		"VisualDelaySeconds"
-	};
-else
-	rownames = { 
-		"Speed", 
-		"Accel", 
-		"Appearance", 
-		"Turn", 
-		"Hide", 
-		"Scroll", 
-		"NoteSkins", 
-		"Remove", 
-		"Freeze", 
-		"Jump",
-		"VisualDelaySeconds",
-		"Gauge" 
-	};
+local rownames = { 
+	"Speed", 
+	"Accel", 
+	"Appearance", 
+	"Turn", 
+	"Hide", 
+	"Scroll", 
+	"NoteSkins", 
+	"Remove", 
+	"Freeze", 
+	"Jump",
+	"VisualDelaySeconds"
+}
+
+if not (GAMESTATE:IsExtraStage() or GAMESTATE:IsExtraStage2()) then
+	table.insert(rownames, "Gauge")
 end
 
 local function GetOptionName(screen, idx)
@@ -129,8 +115,7 @@ local function MakeRow(rownames, idx)
 			GainFocusCommand=cmd(diffuse,color("0,0,0,1"));
 			LoseFocusCommand=cmd(diffuse,color("1,1,1,1"));
 		};
-		--SPEED DISPLAY
-		Def.ActorFrame{
+		Def.ActorFrame{		--SPEED DISPLAY
 			Condition=not GAMESTATE:IsCourseMode(),
 			OnCommand=function(s) s:queuecommand("Set") end,
 			SetCommand=function(self)
@@ -171,33 +156,48 @@ local function MakeRow(rownames, idx)
 			};
 			LoadFont("_avenirnext lt pro bold Bold 20px")..{
 				OnCommand=function(s) s:queuecommand("Set") end,
+				OptionRowChangedMessageCommand=function(s) s:queuecommand("Set") end,
+				CurrentStepsP1ChangedMessageCommand=function(s) if pn == PLAYER_1 then s:queuecommand("Set") end end,
+				CurrentStepsP2ChangedMessageCommand=function(s) if pn == PLAYER_2 then s:queuecommand("Set") end end,
 				SetCommand=function(s)
 					local screen = SCREENMAN:GetTopScreen();
 					local song = GAMESTATE:GetCurrentSong()
-					if song then
-						local speedmult = screen:GetOptionRow(0):GetChoiceInRowWithFocus(pn)
-						local speedstring = THEME:GetString("OptionItemNames","Speed"..speedmult)
-						local speedsub = string.gsub(speedstring, "x", "")
-							if song:IsDisplayBpmRandom() or song:IsDisplayBpmSecret() then
-								text = "?"
-							else
-								local dispBPMs = song:GetDisplayBpms()
-								local BPM1Mod = math.floor(dispBPMs[1]*speedsub)
-								if song:IsDisplayBpmConstant() then
-									text = BPM1Mod
-								else
-									local BPM2Mod = math.floor(dispBPMs[2]*speedsub)
-									text = BPM1Mod.." - "..BPM2Mod
-								end
-							end
-						s:settext(text);
-						s:x(65)
-						s:zoom(0.9)
+					if not song then return end
+
+					local steps = GAMESTATE:GetCurrentSteps(pn)
+					if not steps then return end
+
+					local speedmult = screen:GetOptionRow(0):GetChoiceInRowWithFocus(pn)
+					local speedstring = THEME:GetString("OptionItemNames","Speed"..speedmult)
+					local speedsub = tonumber((string.gsub(speedstring, "x", ""))) or 1
+
+					if song:IsDisplayBpmRandom() or song:IsDisplayBpmSecret() then
+						text = "?"
+					else
+						local td = steps:GetTimingData()
+						if not td then return end
+
+						local bpms = td:GetActualBPM()
+						if not bpms or not bpms[1] or not bpms[2] then return end
+
+						local bpmMin = bpms[1]
+						local bpmMax = bpms[2]
+
+						local BPM1Mod = math.floor(bpmMin * speedsub + 0.5)
+
+						if bpmMin == bpmMax then
+							text = BPM1Mod
+						else
+							local BPM2Mod = math.floor(bpmMax * speedsub + 0.5)
+							text = BPM1Mod.." - "..BPM2Mod
+						end
 					end
+					s:settext(text);
+					s:x(65)
+					s:zoom(0.9)
 				end,
 			};
-		};
-		--SPEED DISPLAY
+		}; --SPEED DISPLAY
 		LoadFont("_avenirnext lt pro bold Bold 20px")..{
 			InitCommand=cmd(x,64;uppercase,true;zoom,0.8;maxwidth,150);
 			OnCommand=cmd(queuecommand,"Set");

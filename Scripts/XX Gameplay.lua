@@ -127,9 +127,11 @@ function BeginOutDelay()
 	
 	if GAMESTATE:IsCourseMode() then
 		local numCourseSongs = #GAMESTATE:GetCurrentTrail(GAMESTATE:GetMasterPlayerNumber()):GetTrailEntries()
-		local j = (GAMESTATE:GetLoadingCourseSongIndex() == numCourseSongs-1) and 0 or 1
+		local index = GAMESTATE:GetLoadingCourseSongIndex()
+
+		local j = (index <= 0 or index == numCourseSongs-1) and 0 or 1
 		
-		song = GAMESTATE:GetCurrentTrail(GAMESTATE:GetMasterPlayerNumber()):GetTrailEntry(GAMESTATE:GetLoadingCourseSongIndex()-j):GetSong()
+		song = GAMESTATE:GetCurrentTrail(GAMESTATE:GetMasterPlayerNumber()):GetTrailEntry(index - j):GetSong()
 	end
 	
 	local td = song:GetTimingData()

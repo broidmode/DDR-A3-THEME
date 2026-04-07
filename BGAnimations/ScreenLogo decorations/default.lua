@@ -1,3 +1,6 @@
+PREFSMAN:SetPreference('SongBackgrounds', true)
+GAMESTATE:GetSongOptionsObject("ModsLevel_Preferred"):RandomBGOnly(false)
+
 local function Logo()
 	if GetUserPref("OptionRowLogo")=='GRANDPRIX' then
 		return "GrandPrix"

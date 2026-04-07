@@ -101,6 +101,8 @@ end
 function GetArtistName(item)
 	if item:GetDisplayArtist() == "Unknown artist" then 
 		return ""
+	elseif Basename(item:GetSongDir()) == "Couleur=Blanche" then
+		return "#FFFFFF"
 	else
 		return item:GetDisplayArtist()
 	end
@@ -117,6 +119,14 @@ function ComboUnderField()
 		end
 	else
 		return true
+	end
+end
+
+function ExtraOption2()
+    if GAMESTATE:IsExtraStage() or GAMESTATE:IsExtraStage2() then
+        return "1,2,3,4,5,6,7,8,9,10,11"
+    else
+		return "1,2,3,4,5,6,7,8,9,10,11,12"
 	end
 end
 
@@ -529,6 +539,13 @@ GoldenLeagueSong = {
 	["Continue to the real world"] = "league";				--17th
 	["9th Outburst"] = "league";							--18th
 	["My Drama"] = "league";								--19th
+	--WORLD
+	["Time to HYPERDRIVE"] = "league";						--1st	
+	["Is this dance a Hakken?"] = "league";					--2nd	
+	["access super [hyper] focus"] = "league";				--3rd	
+	["STOMP!!"] = "league";									--4th	
+	["Many mania--"] = "league";							--5th	
+	["S.O.D"] = "league";									--6th	
 };
 
 function JudgmentTransformCommand( self, params )

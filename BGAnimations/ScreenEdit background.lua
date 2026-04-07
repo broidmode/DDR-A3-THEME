@@ -1,3 +1,4 @@
+PREFSMAN:SetPreference('SongBackgrounds', true)
 return Def.ActorFrame{	
 	Def.Sprite {
 		OnCommand=function(s)

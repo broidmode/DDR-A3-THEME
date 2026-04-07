@@ -1,35 +1,37 @@
 local pn = ...
-local yspacing = 31;
 local DiffList = Def.ActorFrame{};
 
 local function DrawDiffListItem(diff)
-  local DifficultyListItem = Def.ActorFrame{
-    InitCommand=function(s)
-      s:xy(pn==PLAYER_1 and -3 or 3,(Difficulty:Reverse()[diff] * yspacing)-80)
-    end,
-    SetCommand=function(self)
-      local st=GAMESTATE:GetCurrentStyle():GetStepsType()
-      local song=GAMESTATE:GetCurrentSong()
-      if song then
-        if song:HasStepsTypeAndDifficulty( st, diff ) then
-          local steps = song:GetOneSteps( st, diff )
-          self:visible(true)
-        else
-            self:visible(false)
-        end
-      else
-        self:visible(false)
-      end;
-    end;
-    Def.BitmapText{
-      Font="_dispatrox 32px",
-      Name="DiffLabel";
-      InitCommand=function(self)
-        self:halign(pn=='pnNumber_P2' and 1 or 0):draworder(99):diffuse(Color.White):zoomx(0.5):zoomy(0.6):maxwidth(150)
-        self:x(-119)
-        self:settext(THEME:GetString("CustomDifficulty",ToEnumShortString(diff)))
-      end;
-    };
+	local DifficultyListItem = Def.ActorFrame{
+		InitCommand=function(s)
+			s:x(pn==PLAYER_1 and -3 or 3)
+		end,
+		SetCommand=function(self)
+			local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+			local song = GAMESTATE:GetCurrentSong()
+			if not song then
+				self:visible(false)
+				return
+			end
+			local hasEdit = song:HasStepsTypeAndDifficulty(st, "Difficulty_Edit")
+			local yspacing = hasEdit and 31 or 39
+			if song:HasStepsTypeAndDifficulty(st, diff) then
+				self:y((Difficulty:Reverse()[diff] * yspacing)-80)
+				self:visible(true)
+			else
+				self:visible(false)
+			end
+		end,
+		Def.BitmapText{
+		Font="_dispatrox 32px",
+		Name="DiffLabel";
+			InitCommand=function(self)
+				self:halign(pn=='pnNumber_P2' and 1 or 0)
+				self:draworder(99):diffuse(Color.White):zoomx(0.5):zoomy(0.6):maxwidth(150)
+				self:x(-119)
+				self:settext(THEME:GetString("CustomDifficulty",ToEnumShortString(diff)))
+			end;
+		};
     Def.ActorFrame{
       InitCommand=function(s) s:x(pn==pn_2 and 26 or -26) end,
       Def.Quad{
@@ -224,18 +226,20 @@ return Def.ActorFrame{
 		end,
 		OnCommand=function(s) s:diffusealpha(0):sleep(0.8):diffusealpha(0.7) end,
 		SetCommand=function(s)
-			local song=GAMESTATE:GetCurrentSong()
+			local song = GAMESTATE:GetCurrentSong()
 			if song then
 				s:visible(true)
 				local steps = GAMESTATE:GetCurrentSteps(pn)
 					if steps then
-					local diff = steps:GetDifficulty();
-					local st=GAMESTATE:GetCurrentStyle():GetStepsType();
+						local diff = steps:GetDifficulty()
+						local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+						local hasEdit = song:HasStepsTypeAndDifficulty(st, "Difficulty_Edit")
+						local yspacing = hasEdit and 31 or 39
 						s:y((Difficulty:Reverse()[diff] * yspacing)-80)
-					end;
+					end
 			else
 				s:visible(false)
-			end;
+			end
 		end,
 	};
 }

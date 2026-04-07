@@ -107,7 +107,11 @@ t[#t+1] = Def.Actor{
 		self:queuecommand("SetScreen")
 	end;
 	SetScreenCommand=function(self)
-		SCREENMAN:GetTopScreen():SetNextScreenName("ScreenProfileLoad"):StartTransitioningScreen("SM_GoToNextScreen")
+		if PROFILEMAN:GetNumLocalProfiles() >= 2 then
+			SCREENMAN:GetTopScreen():SetNextScreenName("ScreenProfileLoad"):StartTransitioningScreen("SM_GoToNextScreen")
+		else
+			SCREENMAN:GetTopScreen():SetNextScreenName("ScreenSelectMusic"):StartTransitioningScreen("SM_GoToNextScreen")
+		end
 	end;
 };
 

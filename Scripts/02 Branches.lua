@@ -248,7 +248,7 @@ Branch = {
 		elseif GAMESTATE:GetCurrentStage() == "Stage_Extra1" or GAMESTATE:GetCurrentStage() == "Stage_Extra2" then
 			return "ScreenProfileSave"
 		elseif GAMESTATE:IsCourseMode() then
-			return "ScreenDataSaveSummary"
+			return "ScreenProfileSaveSummary"
 		elseif STATSMAN:GetCurStageStats():AllFailed() then
 			-- if string.find(string.lower(GAMESTATE:GetPlayerState("PlayerNumber_P1"):GetPlayerOptionsString("ModsLevel_Preferred")) ,"battery")  
 				-- or string.find(string.lower(GAMESTATE:GetPlayerState("PlayerNumber_P2"):GetPlayerOptionsString("ModsLevel_Preferred")) ,"battery") 

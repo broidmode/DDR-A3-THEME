@@ -19,6 +19,7 @@ t[#t+1] = Def.Actor {
 	end;
 };
 --Thanks Razorblade!
+
 t[#t+1] = Def.ActorFrame{
 	OnCommand=function(s) s:queuecommand("Play") end,
 	PlayCommand=function(s) 

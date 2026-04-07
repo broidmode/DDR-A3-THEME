@@ -159,67 +159,67 @@ if IsGoldenLeague() then
 			InitCommand=function(s) s:Center() end,
 			Def.Sprite{
 				Texture=THEME:GetPathG("","_doors/GoldenLeague/arrow"),
-				InitCommand=function(s) s:rotationz(0):vertalign(bottom):blend('BlendMode_Add'):diffusealpha(0) end,
+				InitCommand=function(s) s:blend('BlendMode_Add'):diffusealpha(0) end,
 				AnimCloseCommand=function(s)
-					s:zoom(0.367)
-					s:sleep(0.06):decelerate(0.6):rotationz(720)
+					s:zoom(0.367):rotationz(0):vertalign(bottom)
+					s:sleep(0.06):diffusealpha(0.5)
+					s:sleep(0.06):diffusealpha(0)
+					s:sleep(0.06):diffusealpha(0.5):decelerate(0.6):rotationz(720)
 					s:sleep(0.06):diffusealpha(0)
 					s:sleep(0.06):diffusealpha(0.5)
 					s:sleep(0.06):diffusealpha(0)
-					s:sleep(0.06):diffusealpha(0.5)
-					s:sleep(0.06):diffusealpha(0)
-					s:sleep(0.06):diffusealpha(0.5):decelerate(0.2):addy(-105)
+					s:sleep(0.06):diffusealpha(0.5):decelerate(0.2):y(-105)
 					s:zoom(0.667)
 				end,
-				AnimOpenCommand=function(s) s:rotationz(0):addy(105):linear(0.05):diffusealpha(0) end,
+				AnimOpenCommand=function(s) s:stoptweening():y(0):diffusealpha(0) end,
 			};
 			Def.Sprite{
 				Texture=THEME:GetPathG("","_doors/GoldenLeague/arrow"),
-				InitCommand=function(s) s:rotationz(90):vertalign(bottom):blend('BlendMode_Add'):diffusealpha(0) end,
+				InitCommand=function(s) s:blend('BlendMode_Add'):diffusealpha(0) end,
 				AnimCloseCommand=function(s)
-					s:zoom(0.367)
-					s:sleep(0.06):decelerate(0.6):rotationz(90+720)
+					s:zoom(0.367):rotationz(90):vertalign(bottom)
+					s:sleep(0.06):diffusealpha(0.5)
+					s:sleep(0.06):diffusealpha(0)
+					s:sleep(0.06):diffusealpha(0.5):decelerate(0.6):rotationz(90+720)
 					s:sleep(0.06):diffusealpha(0)
 					s:sleep(0.06):diffusealpha(0.5)
 					s:sleep(0.06):diffusealpha(0)
-					s:sleep(0.06):diffusealpha(0.5)
-					s:sleep(0.06):diffusealpha(0)
-					s:sleep(0.06):diffusealpha(0.5):decelerate(0.2):addx(340)
+					s:sleep(0.06):diffusealpha(0.5):decelerate(0.2):x(340)
 					s:zoom(0.667)
 				end,
-				AnimOpenCommand=function(s) s:rotationz(90):addx(-340):linear(0.05):diffusealpha(0) end,
+				AnimOpenCommand=function(s) s:stoptweening():x(0):diffusealpha(0) end,
 			};
 			Def.Sprite{
 				Texture=THEME:GetPathG("","_doors/GoldenLeague/arrow"),
-				InitCommand=function(s) s:rotationz(180):vertalign(bottom):blend('BlendMode_Add'):diffusealpha(0) end,
+				InitCommand=function(s) s:blend('BlendMode_Add'):diffusealpha(0) end,
 				AnimCloseCommand=function(s)
-					s:zoom(0.367)
-					s:sleep(0.06):decelerate(0.6):rotationz(180+720)
+					s:zoom(0.367):rotationz(180):vertalign(bottom)
+					s:sleep(0.06):diffusealpha(0.5)
+					s:sleep(0.06):diffusealpha(0)
+					s:sleep(0.06):diffusealpha(0.5):decelerate(0.6):rotationz(180+720)
 					s:sleep(0.06):diffusealpha(0)
 					s:sleep(0.06):diffusealpha(0.5)
 					s:sleep(0.06):diffusealpha(0)
-					s:sleep(0.06):diffusealpha(0.5)
-					s:sleep(0.06):diffusealpha(0)
-					s:sleep(0.06):diffusealpha(0.5):decelerate(0.2):addy(105)
+					s:sleep(0.06):diffusealpha(0.5):decelerate(0.2):y(105)
 					s:zoom(0.667)
 				end,
-				AnimOpenCommand=function(s) s:rotationz(180):addy(-105):linear(0.05):diffusealpha(0) end,
+				AnimOpenCommand=function(s) s:stoptweening():y(0):diffusealpha(0) end,
 			};
 			Def.Sprite{
 				Texture=THEME:GetPathG("","_doors/GoldenLeague/arrow"),
-				InitCommand=function(s) s:rotationz(270):vertalign(bottom):blend('BlendMode_Add'):diffusealpha(0) end,
+				InitCommand=function(s) s:blend('BlendMode_Add'):diffusealpha(0) end,
 				AnimCloseCommand=function(s)
-					s:zoom(0.367)
-					s:sleep(0.06):decelerate(0.6):rotationz(270+720)
+					s:zoom(0.367):rotationz(270):vertalign(bottom)
+					s:sleep(0.06):diffusealpha(0.5)
+					s:sleep(0.06):diffusealpha(0)
+					s:sleep(0.06):diffusealpha(0.5):decelerate(0.6):rotationz(270+720)
 					s:sleep(0.06):diffusealpha(0)
 					s:sleep(0.06):diffusealpha(0.5)
 					s:sleep(0.06):diffusealpha(0)
-					s:sleep(0.06):diffusealpha(0.5)
-					s:sleep(0.06):diffusealpha(0)
-					s:sleep(0.06):diffusealpha(0.5):decelerate(0.2):addx(-340)
+					s:sleep(0.06):diffusealpha(0.5):decelerate(0.2):x(-340)
 					s:zoom(0.667)
 				end,
-				AnimOpenCommand=function(s) s:rotationz(270):addx(340):linear(0.05):diffusealpha(0) end,
+				AnimOpenCommand=function(s) s:stoptweening():x(0):diffusealpha(0) end,
 			};
 		};
 	};

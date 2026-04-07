@@ -40,7 +40,7 @@ return t
 	-- };
 -- end
 
--- local SleepPlus = 1.35
+-- local SleepPlus = 2.7
 -- return Def.ActorFrame{
 	-- t;
 	-- Def.ActorFrame{

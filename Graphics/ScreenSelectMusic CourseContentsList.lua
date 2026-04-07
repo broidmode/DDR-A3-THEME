@@ -12,7 +12,7 @@ end
 return Def.CourseContentsList {
 	InitCommand=function(s) s:y(_screen.cy+10):zoom(0.667) end,
 	
-	MaxSongs = 999;
+	MaxSongs = 50;
 	NumItemsToDraw = 6;
 	ShowCommand=function(s) s:linear(0.3):diffusealpha(1) end,
 	HideCommand=function(s) s:linear(0.3):diffusealpha(0) end,
@@ -21,18 +21,18 @@ return Def.CourseContentsList {
 		self:finishtweening()
 		self:SetFromGameState();
 		self:SetCurrentAndDestinationItem(0);
-		self:SetPauseCountdownSeconds(1);
-		self:SetSecondsPauseBetweenItems( 1 );
+		self:SetPauseCountdownSeconds(0.2);
+		self:SetSecondsPauseBetweenItems(0.1);
 		self:SetTransformFromFunction(transform)
 		if GAMESTATE:GetCurrentCourse():GetEstimatedNumStages() > 4 then
 			self:SetDestinationItem(GAMESTATE:GetCurrentCourse():GetEstimatedNumStages()-4);
-			seconds = self:GetSecondsToDestination();
+			local seconds = math.min(self:GetSecondsToDestination(), 0.6)
 			self:queuecommand("Reset");
 		else
 		end;
 	end;
 	ResetCommand=function(self)
-		self:sleep(seconds+5):queuecommand("Set");
+		self:sleep(seconds+0.2):queuecommand("Set");
 	end;
 	CurrentTrailP1ChangedMessageCommand=function(s) s:playcommand("Set") end,
 	CurrentTrailP2ChangedMessageCommand=function(s) s:playcommand("Set") end,
