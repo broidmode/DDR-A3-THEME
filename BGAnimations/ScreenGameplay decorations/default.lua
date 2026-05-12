@@ -1,6 +1,9 @@
 local t = Def.ActorFrame{};
 local lastAnnouncer = ANNOUNCER:GetCurrentAnnouncer()
 
+-- Apply per-player timing (disable W5 judgment)
+ApplyPerPlayerTiming()
+
 t[#t+1] = StatsEngine()
 
 t[#t+1] = Def.Actor{
