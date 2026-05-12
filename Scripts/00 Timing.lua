@@ -57,3 +57,40 @@ function ApplyPerPlayerTiming()
 		po:DisableTimingWindow("TimingWindow_W5")
 	end
 end
+
+-- Custom Theme option row that resets timing when switching to non-DDR-A3 themes.
+-- Use in metrics.ini as: Line="lua,ThemeOptionRow()"
+function ThemeOptionRow()
+	return {
+		Name = "Theme",
+		Choices = THEME:GetSelectableThemeNames(),
+		LayoutType = "ShowAllInRow",
+		SelectType = "SelectOne",
+		OneChoiceForAllPlayers = true,
+		ExportOnChange = false,
+		LoadSelections = function(self, list, pn)
+			local theme = THEME:GetCurThemeName()
+			if not theme then return end
+			for i, name in ipairs(self.Choices) do
+				if name == theme then
+					list[i] = true
+					return
+				end
+			end
+			list[1] = true
+		end,
+		SaveSelections = function(self, list, pn)
+			for i = 1, #self.Choices do
+				if list[i] then
+					local newTheme = self.Choices[i]
+					if newTheme ~= THEME:GetCurThemeName() then
+						ResetTimingToDefaults()
+						PREFSMAN:SavePreferences()
+						THEME:SetTheme(newTheme)
+					end
+					return
+				end
+			end
+		end,
+	}
+end
