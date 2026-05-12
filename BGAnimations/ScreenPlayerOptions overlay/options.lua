@@ -188,8 +188,11 @@ local function MakeRow(rownames, idx)
 						if bpmMin == bpmMax then
 							text = BPM1Mod
 						else
-							local BPM2Mod = math.floor(bpmMax * speedsub + 0.5)
-							text = BPM1Mod.." - "..BPM2Mod
+							local dominant = GetDominantBPM(song)
+							local bpmMed = dominant or bpmMin
+							local BPM2Mod = math.floor(bpmMed * speedsub + 0.5)
+							local BPM3Mod = math.floor(bpmMax * speedsub + 0.5)
+							text = BPM1Mod.." - "..BPM2Mod.." - "..BPM3Mod
 						end
 					end
 					s:settext(text);

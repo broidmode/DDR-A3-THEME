@@ -30,6 +30,48 @@ function SameDiffSteps(song, pn)
 	end;
 end;
 
+-- Calculate the dominant BPM of a song (weighted by time spent at each BPM).
+-- Returns the BPM that occupies the most total time in the song.
+function GetDominantBPM(song)
+	if not song then return nil end
+	local td = song:GetTimingData()
+	if not td then return nil end
+
+	local segments = td:GetBPMsAndTimes(true)  -- {{beat, bpm}, ...}
+	if not segments or #segments == 0 then return nil end
+
+	local lastBeat = song:GetLastBeat()
+	if not lastBeat or lastBeat <= 0 then return nil end
+
+	-- Accumulate seconds spent at each BPM (rounded to 0.1 for bucketing)
+	local timeAtBPM = {}
+	for i, seg in ipairs(segments) do
+		local beatStart = seg[1]
+		local bpm = seg[2]
+		local beatEnd = (segments[i+1] and segments[i+1][1]) or lastBeat
+		local beatSpan = beatEnd - beatStart
+		if beatSpan > 0 and bpm > 0 then
+			local seconds = beatSpan / bpm * 60.0
+			local key = string.format("%.1f", bpm)
+			if not timeAtBPM[key] then
+				timeAtBPM[key] = { seconds = 0, bpm = bpm }
+			end
+			timeAtBPM[key].seconds = timeAtBPM[key].seconds + seconds
+		end
+	end
+
+	-- Find the BPM with the most accumulated time
+	local bestBPM, bestTime = nil, 0
+	for _, entry in pairs(timeAtBPM) do
+		if entry.seconds > bestTime then
+			bestTime = entry.seconds
+			bestBPM = entry.bpm
+		end
+	end
+
+	return bestBPM
+end
+
 function MachineOrProfile(pn)
 	if PROFILEMAN:IsPersistentProfile(pn) then
 		return PROFILEMAN:GetProfile(pn)
