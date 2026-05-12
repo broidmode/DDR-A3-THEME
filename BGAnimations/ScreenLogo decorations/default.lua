@@ -1,6 +1,9 @@
 PREFSMAN:SetPreference('SongBackgrounds', true)
 GAMESTATE:GetSongOptionsObject("ModsLevel_Preferred"):RandomBGOnly(false)
 
+-- Apply DDR A3 timing windows on theme load
+ApplyDDRA3Timing()
+
 local function Logo()
 	if GetUserPref("OptionRowLogo")=='GRANDPRIX' then
 		return "GrandPrix"
