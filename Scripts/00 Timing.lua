@@ -15,6 +15,7 @@ local TimingPrefKeys = {
 	"TimingWindowAdd",
 	"RegenComboAfterMiss",
 	"MaxRegenComboAfterMiss",
+	"MinTNSToHideNotes",
 }
 
 -- DDR A3 timing values
@@ -31,6 +32,7 @@ local DDRA3Timing = {
 	TimingWindowAdd         = 0,        -- No additional timing leniency
 	RegenComboAfterMiss     = 0,        -- No combo regen (DDR behavior)
 	MaxRegenComboAfterMiss  = 0,        -- No combo regen (DDR behavior)
+	MinTNSToHideNotes       = "W4",     -- Good notes disappear when hit
 }
 
 -- Apply DDR A3 timing preferences to the engine.
@@ -56,6 +58,17 @@ function ApplyPerPlayerTiming()
 		local po = GAMESTATE:GetPlayerState(pn):GetPlayerOptions("ModsLevel_Preferred")
 		po:DisableTimingWindow("TimingWindow_W5")
 	end
+end
+
+-- Combo threshold functions for metrics.ini.
+-- DDR behavior: W4 (Good) maintains and continues combo.
+-- Use in metrics.ini as: MinScoreToContinueCombo=ComboContinue()
+function ComboContinue()
+	return "TapNoteScore_W4"
+end
+
+function ComboMaintain()
+	return "TapNoteScore_W4"
 end
 
 -- Custom Theme option row that resets timing when switching to non-DDR-A3 themes.
