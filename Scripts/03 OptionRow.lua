@@ -686,6 +686,26 @@ function OptionRowEXScore()
 end
 
 --Code by Midflight Digital
+-- Gauge choices: Normal, LIFE4, Risky, Flare I-EX, Floating Flare
+local GaugeChoices = {
+	"NORMAL", "LIFE4", "RISKY",
+	"FLARE I", "FLARE II", "FLARE III", "FLARE IV", "FLARE V",
+	"FLARE VI", "FLARE VII", "FLARE VIII", "FLARE IX", "FLARE EX",
+	"FLOATING"
+}
+
+-- Map choice index to internal gauge type string (for FlareGauge system)
+local GaugeChoiceToType = {
+	[1] = "Normal", [2] = "LIFE4", [3] = "Risky",
+	[4] = "Flare1", [5] = "Flare2", [6] = "Flare3", [7] = "Flare4", [8] = "Flare5",
+	[9] = "Flare6", [10] = "Flare7", [11] = "Flare8", [12] = "Flare9", [13] = "FlareEX",
+	[14] = "FloatingFlare"
+}
+
+-- Reverse lookup: type string to choice index
+local GaugeTypeToChoice = {}
+for k, v in pairs(GaugeChoiceToType) do GaugeTypeToChoice[v] = k end
+
 function OptionRowGauge()
 	local t = {
 		Name="Gauge",
@@ -693,9 +713,16 @@ function OptionRowGauge()
 		SelectType = "SelectOne",
 		OneChoiceForAllPlayers = false,
 		ExportOnChange = true,
-		Choices = {"NORMAL", "LIFE4", "RISKY"};
+		Choices = GaugeChoices,
 		LoadSelections = function(self, list, pn)
-			local po = GAMESTATE:GetPlayerState(pn):GetPlayerOptionsArray("ModsLevel_Preferred")
+			local short = ToEnumShortString(pn)
+			local saved = getenv("FlareGaugeType" .. short)
+
+			if saved and GaugeTypeToChoice[saved] then
+				list[GaugeTypeToChoice[saved]] = true
+			else
+				-- Check engine options for legacy Normal/LIFE4/Risky
+				local po = GAMESTATE:GetPlayerState(pn):GetPlayerOptionsArray("ModsLevel_Preferred")
 				if table.search(po, "4Lives") then
 					list[2] = true
 				elseif table.search(po, "1Lives") then
@@ -703,17 +730,44 @@ function OptionRowGauge()
 				else
 					list[1] = true
 				end
+			end
 		end,
 		SaveSelections = function(self, list, pn)
-			local mod
+			local short = ToEnumShortString(pn)
 			local failtype = GetThemeFailType()
-			if list[2] then
+			local selectedIdx = 1
+
+			for i = 1, #list do
+				if list[i] then
+					selectedIdx = i
+					break
+				end
+			end
+
+			-- Store gauge type for FlareGauge system
+			local gaugeType = GaugeChoiceToType[selectedIdx] or "Normal"
+			setenv("FlareGaugeType" .. short, gaugeType)
+
+			-- Determine if this is a Flare gauge (index 4-14)
+			local isFlare = (selectedIdx >= 4 and selectedIdx <= 14)
+
+			-- Apply engine modifiers
+			-- Flare gauges use failoff since FlareGauge.lua handles fail triggering
+			local mod
+			if selectedIdx == 2 then
+				-- LIFE4: battery mode with theme fail type
 				mod = "4 lives,battery,"..failtype
-			elseif list[3] then
+			elseif selectedIdx == 3 then
+				-- Risky: battery mode with theme fail type
 				mod = "1 lives,battery,"..failtype
+			elseif isFlare then
+				-- Flare gauges: bar life meter with failoff (FlareGauge handles fail)
+				mod = "bar,failoff"
 			else
+				-- Normal: bar life meter with theme fail type
 				mod = "bar,"..failtype
 			end
+
 			if mod ~= "" then
 				GAMESTATE:ApplyPreferredModifiers(pn, mod)
 			end

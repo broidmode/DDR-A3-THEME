@@ -4,28 +4,66 @@ local lastAnnouncer = ANNOUNCER:GetCurrentAnnouncer()
 -- Apply per-player timing (disable W5 judgment)
 ApplyPerPlayerTiming()
 
+-- Flare Gauge system actor: initializes and updates Flare gauges per-player
+t[#t+1] = Def.Actor{
+	Name = "FlareGaugeSystem",
+
+	-- Initialize gauge state when song loads
+	DoneLoadingNextSongMessageCommand = function(self)
+		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+			InitFlareGauge(pn)
+		end
+	end,
+
+	-- Update gauge on every judgment
+	JudgmentMessageCommand = function(self, params)
+		local pn = params.Player
+		if pn then
+			UpdateFlareGauge(params, pn)
+		end
+	end,
+}
+
 t[#t+1] = StatsEngine()
+
+-- Track frozen scores when Flare gauge fails (stop accumulating)
+local FrozenScores = {}
 
 t[#t+1] = Def.Actor{
     AfterStatsEngineMessageCommand = function(_,params)
         local pn = params.Player
         local pss = STATSMAN:GetCurStageStats():GetPlayerStageStats(pn)
+        local short = ToEnumShortString(pn)
 
         local aScore = params.Data.AScoring
-		pss:SetScore(aScore.Score)
-		pss:SetCurMaxScore(aScore.MaxScore)
+
+        -- Check if using Flare gauge and if it has failed
+        local gaugeType = GetFlareGaugeType(pn)
+        local isFlare = IsFlareGaugeType(gaugeType)
+        local flareFailed = isFlare and GetFlareGaugeFailed(pn)
+
+        if flareFailed then
+            -- Freeze score at last value before fail
+            if not FrozenScores[pn] then
+                FrozenScores[pn] = pss:GetScore()
+            end
+            pss:SetScore(FrozenScores[pn])
+        else
+            FrozenScores[pn] = nil
+            pss:SetScore(aScore.Score)
+            pss:SetCurMaxScore(aScore.MaxScore)
+        end
 
         local fast, slow = 0, 0
 
         local fastSlow = params.Data.FastSlowRecord
-			if fastSlow then
-				fast = fastSlow.Fast
-				slow = fastSlow.Slow
-			end
+        if fastSlow then
+            fast = fastSlow.Fast
+            slow = fastSlow.Slow
+        end
 
-        local short = ToEnumShortString(pn)
-			setenv("numFast"..short, fast)
-		setenv("numSlow"..short, slow)
+        setenv("numFast"..short, fast)
+        setenv("numSlow"..short, slow)
 	end,
 };
 
