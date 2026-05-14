@@ -706,12 +706,13 @@ function OptionRowGauge()
 		end,
 		SaveSelections = function(self, list, pn)
 			local mod
+			local failtype = GetThemeFailType()
 			if list[2] then
-				mod = "4 lives,battery,failimmediate"
+				mod = "4 lives,battery,"..failtype
 			elseif list[3] then
-				mod = "1 lives,battery,failimmediate"
+				mod = "1 lives,battery,"..failtype
 			else
-				mod = "bar,failimmediate"
+				mod = "bar,"..failtype
 			end
 			if mod ~= "" then
 				GAMESTATE:ApplyPreferredModifiers(pn, mod)
@@ -756,6 +757,39 @@ function OptionRowTitleDisplay()
 				WritePrefToFile("OptionRowTitleDisplay", "Dual")
 			else
 				WritePrefToFile("OptionRowTitleDisplay", "Native")
+			end
+		end;
+	};
+	setmetatable(t, t);
+	return t;
+end
+
+function OptionRowFailBehavior()
+	local t = {
+		Name = "FailBehavior";
+		LayoutType = "ShowAllInRow";
+		SelectType = "SelectOne";
+		OneChoiceForAllPlayers = true;
+		ExportOnChange = true;
+		Choices = {"Arcade", "Practice"};
+		LoadSelections = function(self, list, pn)
+			if ReadPrefFromFile("OptionRowFailBehavior") ~= nil then
+				local pref = GetUserPref("OptionRowFailBehavior")
+				if pref == "Practice" then
+					list[2] = true
+				else
+					list[1] = true
+				end
+			else
+				WritePrefToFile("OptionRowFailBehavior", "Arcade")
+				list[1] = true
+			end
+		end;
+		SaveSelections = function(self, list, pn)
+			if list[2] then
+				WritePrefToFile("OptionRowFailBehavior", "Practice")
+			else
+				WritePrefToFile("OptionRowFailBehavior", "Arcade")
 			end
 		end;
 	};

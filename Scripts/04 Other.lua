@@ -139,6 +139,23 @@ function GetTitleDisplayMode()
 	end
 end
 
+function GetThemeFailBehavior()
+	if ReadPrefFromFile("OptionRowFailBehavior") ~= nil then
+		return GetUserPref("OptionRowFailBehavior")
+	else
+		return "Arcade"
+	end
+end
+
+function GetThemeFailType()
+	local behavior = GetThemeFailBehavior()
+	if behavior == "Practice" then
+		return "failimmediatecontinue"
+	else
+		return "failimmediate"
+	end
+end
+
 function GetTranslitTitle(item)
 	local translit = item:GetTranslitMainTitle()
 	if translit and translit ~= "" then

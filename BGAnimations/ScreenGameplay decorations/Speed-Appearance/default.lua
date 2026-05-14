@@ -16,57 +16,64 @@ local DoubleGraphic = Model().."double"
 
 function retrieveMeterType()
 	if true then
+		local failtype = GetThemeFailType()
 		if GAMESTATE:IsExtraStage() then
+			-- Extra Stage always uses immediate fail (arcade behavior)
 			OptionsP1P = OptionsP1P..',failimmediate,battery,4 lives,';
 			OptionsP2P = OptionsP2P..',failimmediate,battery,4 lives,';
 		elseif GAMESTATE:IsExtraStage2() then
+			-- Extra Stage 2 always uses immediate fail (arcade behavior)
 			OptionsP1P = OptionsP1P..',failimmediate,battery,1 lives,';
 			OptionsP2P = OptionsP2P..',failimmediate,battery,1 lives,';
 		else
 			if string.find(OptionsP1P,"1Lives") then
 				OptionsP1P = string.gsub(OptionsP1P, "(battery,)", "");
 				OptionsP1P = string.gsub(OptionsP1P, "(1Lives,)", "");
-				OptionsP1P = OptionsP1P..",failimmediate,battery, 1 Lives";
+				OptionsP1P = OptionsP1P..","..failtype..",battery, 1 Lives";
 			elseif string.find(OptionsP1P,"2Lives") then
 				OptionsP1P = string.gsub(OptionsP1P, "(battery,)", "");
 				OptionsP1P = string.gsub(OptionsP1P, "(2Lives,)", "");
-				OptionsP1P = OptionsP1P..",failimmediate,battery, 2 Lives";
+				OptionsP1P = OptionsP1P..","..failtype..",battery, 2 Lives";
 			elseif string.find(OptionsP1P,"3Lives") then
 				OptionsP1P = string.gsub(OptionsP1P, "(battery,)", "");
 				OptionsP1P = string.gsub(OptionsP1P, "(3Lives,)", "");
-				OptionsP1P = OptionsP1P..",failimmediate,battery, 3 Lives";
+				OptionsP1P = OptionsP1P..","..failtype..",battery, 3 Lives";
 			elseif string.find(OptionsP1P,"4Lives") then
 				OptionsP1P = string.gsub(OptionsP1P, "(battery,)", "");
 				OptionsP1P = string.gsub(OptionsP1P, "(4Lives,)", "");
-				OptionsP1P = OptionsP1P..",failimmediate,battery, 4 Lives";
+				OptionsP1P = OptionsP1P..","..failtype..",battery, 4 Lives";
 			else
+				-- Bar mode: apply theme fail setting
 				OptionsP1P = string.gsub(OptionsP1P, "(battery,)", "");
+				OptionsP1P = OptionsP1P..","..failtype;
 			end
-			
+
 			if string.find(OptionsP2P,"1Lives") then
 				OptionsP2P = string.gsub(OptionsP2P, "(battery,)", "");
 				OptionsP2P = string.gsub(OptionsP2P, "(1Lives,)", "");
-				OptionsP2P = OptionsP2P..",failimmediate,battery, 1 Lives";
+				OptionsP2P = OptionsP2P..","..failtype..",battery, 1 Lives";
 			elseif string.find(OptionsP2P,"2Lives") then
 				OptionsP2P = string.gsub(OptionsP2P, "(battery,)", "");
 				OptionsP2P = string.gsub(OptionsP2P, "(2Lives,)", "");
-				OptionsP2P = OptionsP2P..",failimmediate,battery, 2 Lives";
+				OptionsP2P = OptionsP2P..","..failtype..",battery, 2 Lives";
 			elseif string.find(OptionsP2P,"3Lives") then
 				OptionsP2P = string.gsub(OptionsP2P, "(battery,)", "");
 				OptionsP2P = string.gsub(OptionsP2P, "(3Lives,)", "");
-				OptionsP2P = OptionsP2P..",failimmediate,battery, 3 Lives";
+				OptionsP2P = OptionsP2P..","..failtype..",battery, 3 Lives";
 			elseif string.find(OptionsP2P,"4Lives") then
 				OptionsP2P = string.gsub(OptionsP2P, "(battery,)", "");
 				OptionsP2P = string.gsub(OptionsP2P, "(4Lives,)", "");
-				OptionsP2P = OptionsP2P..",failimmediate,battery, 4 Lives";
+				OptionsP2P = OptionsP2P..","..failtype..",battery, 4 Lives";
 			else
+				-- Bar mode: apply theme fail setting
 				OptionsP2P = string.gsub(OptionsP2P, "(battery,)", "");
+				OptionsP2P = OptionsP2P..","..failtype;
 			end
 		end;
-		
+
 		GAMESTATE:SetFailTypeExplicitlySet();
 	 end;
-	 
+
 end
 
 
@@ -111,27 +118,30 @@ function SetGameplayMeterType(player)
 		end
 		
 		val= ReadOrCreateGameplayMeterTypeForPlayer(PlayerUID,val);
-		
+		local failtype = GetThemeFailType()
+
 		if val == "1 Lives" then
 			Options = string.gsub(Options, "(battery,)", "");
 			Options = string.gsub(Options, "(1Lives,)", "");
-			Options = Options..",failimmediate,battery, 1 Lives";
+			Options = Options..","..failtype..",battery, 1 Lives";
 		elseif val == "2 Lives" then
 			Options = string.gsub(Options, "(battery,)", "");
 			Options = string.gsub(Options, "(2Lives,)", "");
-			Options = Options..",failimmediate,battery, 2 Lives";
+			Options = Options..","..failtype..",battery, 2 Lives";
 		elseif val == "3 Lives" then
 			Options = string.gsub(Options, "(battery,)", "");
 			Options = string.gsub(Options, "(3Lives,)", "");
-			Options = Options..",failimmediate,battery, 3 Lives";
+			Options = Options..","..failtype..",battery, 3 Lives";
 		elseif val == "4 Lives" then
 			Options = string.gsub(Options, "(battery,)", "");
 			Options = string.gsub(Options, "(4Lives,)", "");
-			Options = Options..",failimmediate,battery, 4 Lives";
+			Options = Options..","..failtype..",battery, 4 Lives";
 		else
+			-- Bar mode: apply theme fail setting
 			Options = string.gsub(Options, "(battery,)", "");
+			Options = Options..","..failtype;
 		end;
-		
+
 		if player=="PlayerNumber_P1" then
 			GAMESTATE:GetPlayerState('PlayerNumber_P1'):SetPlayerOptions('ModsLevel_Preferred',Options);
 		else
