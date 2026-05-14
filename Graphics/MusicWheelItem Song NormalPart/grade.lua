@@ -29,6 +29,57 @@ return Def.ActorFrame{
 					else
 						profile = PROFILEMAN:GetMachineProfile();
 					end;
+
+					-- Try to get stored ChartResult first (includes Flare data)
+					local chartResult = nil
+					if GetChartResultBySong then
+						chartResult = GetChartResultBySong(pn, self.cur_song, steps)
+					end
+
+					-- If we have ChartResult data, use it
+					if chartResult and chartResult.lamp then
+						local lamp = chartResult.lamp
+						local flareGauge = chartResult.flareGauge
+
+						-- Check for Flare lamp graphics (Flare1..FlareEX)
+						if flareGauge and flareGauge:match("^Flare") then
+							local flarePath = THEME:GetCurrentThemeDirectory() .. "Graphics/MusicWheelItem Song NormalPart/lamp/ClearedMark " .. flareGauge .. ".png"
+							if FILEMAN:DoesFileExist(flarePath) then
+								self:Load(flarePath)
+								self:diffuseshift():effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,0.75")):effectperiod(0.1)
+								self:visible(true)
+								return
+							end
+						end
+
+						-- Use combo lamp graphic
+						if lamp == "MFC" then
+							self:Load(THEME:GetPathG("MusicWheelItem Song NormalPart/lamp/ClearedMark","MFC"))
+							self:diffuseshift():effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,0.75")):effectperiod(0.1)
+						elseif lamp == "PFC" then
+							self:Load(THEME:GetPathG("MusicWheelItem Song NormalPart/lamp/ClearedMark","PFC"))
+							self:diffuseshift():effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,0.75")):effectperiod(0.1)
+						elseif lamp == "GFC" then
+							self:Load(THEME:GetPathG("MusicWheelItem Song NormalPart/lamp/ClearedMark","GreatFC"))
+							self:diffuseshift():effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,0.75")):effectperiod(0.1)
+						elseif lamp == "FC" then
+							self:Load(THEME:GetPathG("MusicWheelItem Song NormalPart/lamp/ClearedMark","GoodFC"))
+							self:diffuseshift():effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,0.75")):effectperiod(0.1)
+						elseif lamp == "LIFE4" then
+							self:Load(THEME:GetPathG("MusicWheelItem Song NormalPart/lamp/ClearedMark","Risky"))
+							self:diffuseshift():effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,1")):effectperiod(1.1)
+						elseif lamp == "Clear" then
+							self:Load(THEME:GetPathG("MusicWheelItem Song NormalPart/lamp/ClearedMark","LifeBar"))
+							self:diffuseshift():effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,1")):effectperiod(1.1)
+						else
+							self:visible(false)
+							return
+						end
+						self:visible(true)
+						return
+					end
+
+					-- Fall back to engine HighScore data
 					local scorelist = profile:GetHighScoreList(self.cur_song,steps);
 					assert(scorelist);
 					local scores = scorelist:GetHighScores();

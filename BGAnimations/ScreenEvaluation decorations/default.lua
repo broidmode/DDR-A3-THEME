@@ -3,6 +3,21 @@ local t = Def.ActorFrame{};
 local StageIndex = GAMESTATE:GetCurrentStageIndex()
 local FinalStage = PREFSMAN:GetPreference("SongsPerPlay")
 
+-- Finalize chart results (combo lamp, flare gauge) for persistence
+t[#t+1] = Def.Actor{
+	OnCommand = function(self)
+		if not GAMESTATE:IsCourseMode() then
+			local song = GAMESTATE:GetCurrentSong()
+			for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+				local steps = GAMESTATE:GetCurrentSteps(pn)
+				if FinalizeChartResult then
+					FinalizeChartResult(pn, song, steps)
+				end
+			end
+		end
+	end,
+}
+
 t[#t+1] = Def.ActorFrame{
     StandardDecorationFromFile("Header","Header");
     StandardDecorationFromFileOptional("Footer","Footer");
@@ -60,6 +75,30 @@ for _,pn in pairs(GAMESTATE:GetEnabledPlayers()) do
 		InitCommand=cmd(zoom,0.667;x,_screen.cx-282;y,_screen.cy-210.5);
 		OffCommand=cmd(sleep,0.2;linear,0.2;diffusealpha,0);
 	};
+	-- Flare badge (left of jacket, right of grade, above score)
+	if GetFlareGaugeType and GetFlareGaugeType(pn) ~= "Normal" and not GetFlareGaugeFailed(pn) then
+		local flareLevel = nil
+		if GetFlareGaugeType(pn) == "FloatingFlare" then
+			flareLevel = GetFloatingFlareCurrent and GetFloatingFlareCurrent(pn)
+		else
+			flareLevel = GetFlareGaugeIndex and GetFlareGaugeIndex(pn)
+		end
+		if flareLevel and flareLevel >= 1 then
+			local assetName = flareLevel == 10 and "scre_flare_level_ex" or ("scre_flare_level_"..flareLevel)
+			local flarePath = "/" .. THEME:GetCurrentThemeDirectory() .. "Graphics/MusicWheelItem Song NormalPart/flare/" .. assetName .. ".png"
+			if FILEMAN:DoesFileExist(flarePath) then
+				t[#t+1] = Def.Sprite{
+					InitCommand=function(s)
+						s:Load(flarePath)
+						s:xy(pn==PLAYER_1 and _screen.cx-180 or _screen.cx+180, _screen.cy-85)
+						s:zoom(0.667)
+					end,
+					OnCommand=function(s) s:zoomy(0):sleep(0.5):linear(0.15):zoomy(0.667) end,
+					OffCommand=function(s) s:linear(0.2):diffusealpha(0) end,
+				}
+			end
+		end
+	end
     t[#t+1] = Def.ActorFrame{
         Name="StepsDisplay",
         InitCommand=function(s) s:xy(pn==PLAYER_1 and _screen.cx-153 or _screen.cx+153,_screen.cy-201):zoom(0.667) end,

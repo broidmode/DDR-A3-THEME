@@ -63,12 +63,75 @@ for i=1,2 do
 	};
 end
 
-for i,pn in pairs(GAMESTATE:GetEnabledPlayers()) do 
+-- Helper to map flareGauge string to asset path
+local function GetFlareBadgeTexture(flareGauge)
+	if not flareGauge then return nil end
+	local level = flareGauge:match("^Flare(%d+)$")
+	local filename
+	if level then
+		filename = "scre_flare_level_"..level
+	elseif flareGauge == "FlareEX" then
+		filename = "scre_flare_level_ex"
+	else
+		return nil
+	end
+	return THEME:GetCurrentThemeDirectory() .. "Graphics/MusicWheelItem Song NormalPart/flare/"..filename..".png"
+end
+
+local flareBadge = Def.ActorFrame{}
+
+for i,pn in pairs(GAMESTATE:GetEnabledPlayers()) do
 	grade[#grade+1] = loadfile(THEME:GetPathG("MusicWheelItem","Song NormalPart/grade.lua"))(pn)..{
 		InitCommand=function(s) s:xy(-5,3.4):zoomy(1.13) end,
 	};
 	diff[#diff+1] = loadfile(THEME:GetPathG("MusicWheelItem","Song NormalPart/diff.lua"))(pn)..{
 		InitCommand=function(s) s:xy(pn == PLAYER_1 and -74 or 74,-36) end,
+	};
+	flareBadge[#flareBadge+1] = Def.Sprite{
+		InitCommand=function(s)
+			s:xy(pn == PLAYER_1 and -74 or 74, 38):zoom(0.4):visible(false)
+		end,
+		SetCommand=function(self, param)
+			self.cur_song = param.Song
+			self:queuecommand("DiffChange")
+		end,
+		DiffChangeCommand=function(self)
+			if not self.cur_song then
+				self:visible(false)
+				return
+			end
+			local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+			local steps = GAMESTATE:GetCurrentSteps(pn)
+			if not steps then
+				self:visible(false)
+				return
+			end
+			local diff = steps:GetDifficulty()
+			if not self.cur_song:HasStepsTypeAndDifficulty(st, diff) then
+				self:visible(false)
+				return
+			end
+			local chartSteps = self.cur_song:GetOneSteps(st, diff)
+			if not chartSteps then
+				self:visible(false)
+				return
+			end
+			local chartResult = nil
+			if GetChartResultBySong then
+				chartResult = GetChartResultBySong(pn, self.cur_song, chartSteps)
+			end
+			if chartResult and chartResult.flareGauge then
+				local tex = GetFlareBadgeTexture(chartResult.flareGauge)
+				if tex and FILEMAN:DoesFileExist(tex) then
+					self:Load(tex)
+					self:visible(true)
+					return
+				end
+			end
+			self:visible(false)
+		end,
+		CurrentStepsP1ChangedMessageCommand=function(self) if pn == PLAYER_1 then self:queuecommand("DiffChange") end end,
+		CurrentStepsP2ChangedMessageCommand=function(self) if pn == PLAYER_2 then self:queuecommand("DiffChange") end end,
 	};
 end;
 
@@ -206,6 +269,7 @@ return Def.ActorFrame{
 		grade;
 	};
 	diff;
+	flareBadge;
 	cursor;
 	Def.Sprite{
 		Texture=THEME:GetPathG("","_shared/"..Model().."long"),
