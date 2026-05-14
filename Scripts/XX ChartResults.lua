@@ -360,6 +360,17 @@ end
 
 -- Public API to get/set gauge preference (also updates env variable)
 function GetPlayerGaugePref(pn)
+	-- If not loaded yet, try to load from profile directory
+	if not PlayerPrefsData[pn] then
+		local slot = ({[PLAYER_1]='ProfileSlot_Player1', [PLAYER_2]='ProfileSlot_Player2'})[pn]
+		if slot then
+			local dir = PROFILEMAN:GetProfileDir(slot)
+			if dir and dir ~= "" then
+				Trace("[PlayerPrefs] Lazy-loading prefs for " .. tostring(pn) .. " from " .. dir)
+				LoadPlayerPrefs(pn, dir)
+			end
+		end
+	end
 	local data = PlayerPrefsData[pn]
 	return data and data.gaugeType or "Normal"
 end
