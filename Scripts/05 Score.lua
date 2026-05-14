@@ -18,12 +18,13 @@ function CustomScore_SM5b1(params,scoremode,steps,cur)
 		local maxsteps=math.max(rv:GetValue('RadarCategory_TapsAndHolds')
 			+rv:GetValue('RadarCategory_Holds')+rv:GetValue('RadarCategory_Rolls'),1);
 			
-		if scoremode=="A20" then
+		if scoremode=="A3" then
 			local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 			local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 			local w3=pss:GetTapNoteScores('TapNoteScore_W3');
+			local w4=pss:GetTapNoteScores('TapNoteScore_W4');
 			local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
-			local minus=0;	-- [ja] b1では強制でデフォルトスコア計算の値が加算されるのでマイナスする 
+			local minus=0;	-- [ja] b1では強制でデフォルトスコア計算の値が加算されるのでマイナスする
 			if params.HoldNoteScore=='HoldNoteScore_Held' then
 				hd=hd+1;
 				minus=5;
@@ -37,21 +38,20 @@ function CustomScore_SM5b1(params,scoremode,steps,cur)
 				w3=w3+1;
 				minus=3;
 			elseif params.TapNoteScore=='TapNoteScore_W4' then
+				w4=w4+1;
 				minus=2;
 			elseif params.TapNoteScore=='TapNoteScore_W5' then
 				minus=1;
 			end;
-			ret=(math.round((w1 + w2 + w3/2 + hd) *100000/maxsteps-(w2 + w3))*10)-minus;
-			--pss:SetScore(ret);
-
-			pss:SetScore(4000);
+			ret=(math.round((w1 + w2 + w3*0.6 + w4*0.2 + hd) *100000/maxsteps-(w2 + w3 + w4))*10)-minus;
+			pss:SetScore(ret);
 
 		elseif scoremode=="SuperNOVA2" then
 			local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 			local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 			local w3=pss:GetTapNoteScores('TapNoteScore_W3');
 			local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
-			local minus=0;	-- [ja] b1では強制でデフォルトスコア計算の値が加算されるのでマイナスする 
+			local minus=0;	-- [ja] b1では強制でデフォルトスコア計算の値が加算されるのでマイナスする
 			if params.HoldNoteScore=='HoldNoteScore_Held' then
 				hd=hd+1;
 				minus=5;
@@ -130,7 +130,7 @@ function CustomScore_SM5b2(params,scoremode,steps,cur)
 		local maxsteps=math.max(rv:GetValue('RadarCategory_TapsAndHolds')
 			+rv:GetValue('RadarCategory_Holds')+rv:GetValue('RadarCategory_Rolls'),1);
 
-		if scoremode=="A20" then
+		if scoremode=="A3" then
 			local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 			local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 			local w3=pss:GetTapNoteScores('TapNoteScore_W3');
@@ -271,10 +271,11 @@ function CustomScore_SM5a2(params,scoremode,steps,cur)
 			
 			
 			
-		if scoremode=="A20" then
+		if scoremode=="A3" then
 			local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 			local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 			local w3=pss:GetTapNoteScores('TapNoteScore_W3');
+			local w4=pss:GetTapNoteScores('TapNoteScore_W4');
 			local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
 			if params.HoldNoteScore=='HoldNoteScore_LetGo' then
 			elseif params.HoldNoteScore=='HoldNoteScore_Held' then
@@ -285,14 +286,12 @@ function CustomScore_SM5a2(params,scoremode,steps,cur)
 				w2=w2+1;
 			elseif params.TapNoteScore=='TapNoteScore_W3' then
 				w3=w3+1;
+			elseif params.TapNoteScore=='TapNoteScore_W4' then
+				w4=w4+1;
 			end;
-			ret=(math.round((w1 + w2 + w3/2 + hd) *100000/maxsteps-(w2 + w3))*10);
+			ret=(math.round((w1 + w2 + w3*0.6 + w4*0.2 + hd) *100000/maxsteps-(w2 + w3 + w4))*10);
+			CustomScore_SM5a2_Set(pn,ret);
 
-
-
-			--CustomScore_SM5a2_Set(pn,ret);
-			CustomScore_SM5a2_Set(pn,6000);
-			
 		elseif scoremode=="SuperNOVA2" then
 			local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 			local w2=pss:GetTapNoteScores('TapNoteScore_W2');
@@ -371,12 +370,13 @@ function GetNormalScore(maxsteps,score,player)
 	local w1 = score:GetTapNoteScore('TapNoteScore_W1');
 	local w2 = score:GetTapNoteScore('TapNoteScore_W2');
 	local w3 = score:GetTapNoteScore('TapNoteScore_W3');
+	local w4 = score:GetTapNoteScore('TapNoteScore_W4');
 	local hd = score:GetHoldNoteScore('HoldNoteScore_Held');
 	if PREFSMAN:GetPreference("AllowW1")~="AllowW1_Everywhere" then
 			w1 = w1+w2;
 			w2 = 0;
 		end;
-		s = (math.round( (w1 + w2 + w3/2+hd)*100000/maxsteps-(w2 + w3))*10);
+		s = (math.round( (w1 + w2 + w3*0.6 + w4*0.2 + hd)*100000/maxsteps-(w2 + w3 + w4))*10);
 	return s;
 end;
 
@@ -386,12 +386,13 @@ function GetEvaScore(maxsteps,pss,pn)
 	local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 	local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 	local w3=pss:GetTapNoteScores('TapNoteScore_W3');
+	local w4=pss:GetTapNoteScores('TapNoteScore_W4');
 	local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
 	if PREFSMAN:GetPreference("AllowW1")~="AllowW1_Everywhere" then
 			w1=w1+w2;
 			w2=0;
 		end;
-		score = (math.round( (w1 + w2 + w3/2+hd)*100000/maxsteps-(w2 + w3))*10);
+		score = (math.round( (w1 + w2 + w3*0.6 + w4*0.2 + hd)*100000/maxsteps-(w2 + w3 + w4))*10);
 	return score;
 end;
 

@@ -45,6 +45,7 @@ function GetNormalScore(maxsteps,score,pn)
 	local w1 = score:GetTapNoteScore('TapNoteScore_W1');
 	local w2 = score:GetTapNoteScore('TapNoteScore_W2');
 	local w3 = score:GetTapNoteScore('TapNoteScore_W3');
+	local w4 = score:GetTapNoteScore('TapNoteScore_W4');
 	local hd = score:GetHoldNoteScore('HoldNoteScore_Held');
 	if EXScore(pn) == "On" then
 		s = w1*3 + w2*2 + w3 + hd*3;
@@ -53,7 +54,7 @@ function GetNormalScore(maxsteps,score,pn)
 			w1 = w1+w2;
 			w2 = 0;
 		end;
-		s = (math.round( (w1 + w2 + w3/2+hd)*100000/maxsteps-(w2 + w3))*10);
+		s = (math.round( (w1 + w2 + w3*0.6 + w4*0.2 + hd)*100000/maxsteps-(w2 + w3 + w4))*10);
 	end;
 	return s;
 end;
@@ -156,6 +157,7 @@ if not GAMESTATE:IsDemonstration() and not GAMESTATE:IsCourseMode() and GAMESTAT
 					local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 					local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 					local w3=pss:GetTapNoteScores('TapNoteScore_W3');
+					local w4=pss:GetTapNoteScores('TapNoteScore_W4');
 					local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
 					if params.HoldNoteScore=='HoldNoteScore_Held' then
 						hd=hd+1;
@@ -165,8 +167,10 @@ if not GAMESTATE:IsDemonstration() and not GAMESTATE:IsCourseMode() and GAMESTAT
 						w2=w2+1;
 					elseif params.TapNoteScore=='TapNoteScore_W3' then
 						w3=w3+1;
+					elseif params.TapNoteScore=='TapNoteScore_W4' then
+						w4=w4+1;
 					end;
-					
+
 					if bEXScore == "On" then
 						ret = w1*3 + w2*2 + w3;
 						ts[p] = ts[p] + moto
@@ -182,7 +186,7 @@ if not GAMESTATE:IsDemonstration() and not GAMESTATE:IsCourseMode() and GAMESTAT
 							self:settext("0");
 						end;
 					else
-						ret=(math.round((w1 + w2 + w3/2 + hd) *100000/maxsteps-(w2 + w3))*10);
+						ret=(math.round((w1 + w2 + w3*0.6 + w4*0.2 + hd) *100000/maxsteps-(w2 + w3 + w4))*10);
 						ts[p] = ts[p] + moto
 						local last = math.round((ret-ts[p])*0.1);
 						if last > 0 then
