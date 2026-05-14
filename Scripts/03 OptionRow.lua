@@ -715,8 +715,8 @@ function OptionRowGauge()
 		ExportOnChange = true,
 		Choices = GaugeChoices,
 		LoadSelections = function(self, list, pn)
-			local short = ToEnumShortString(pn)
-			local saved = getenv("FlareGaugeType" .. short)
+			-- Read from persisted player prefs (loaded with profile)
+			local saved = GetPlayerGaugePref and GetPlayerGaugePref(pn) or nil
 
 			if saved and GaugeTypeToChoice[saved] then
 				list[GaugeTypeToChoice[saved]] = true
@@ -733,7 +733,6 @@ function OptionRowGauge()
 			end
 		end,
 		SaveSelections = function(self, list, pn)
-			local short = ToEnumShortString(pn)
 			local failtype = GetThemeFailType()
 			local selectedIdx = 1
 
@@ -744,9 +743,14 @@ function OptionRowGauge()
 				end
 			end
 
-			-- Store gauge type for FlareGauge system
+			-- Store gauge type for FlareGauge system (persisted with profile)
 			local gaugeType = GaugeChoiceToType[selectedIdx] or "Normal"
-			setenv("FlareGaugeType" .. short, gaugeType)
+			if SetPlayerGaugePref then
+				SetPlayerGaugePref(pn, gaugeType)
+			else
+				local short = ToEnumShortString(pn)
+				setenv("FlareGaugeType" .. short, gaugeType)
+			end
 
 			-- Determine if this is a Flare gauge (index 4-14)
 			local isFlare = (selectedIdx >= 4 and selectedIdx <= 14)

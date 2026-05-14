@@ -52,10 +52,16 @@ function IsFlareGaugeType(gaugeType)
 	return gaugeType == "Flare" or gaugeType == "FloatingFlare"
 end
 
--- Get the current gauge selection for a player from env (set by OptionRowGauge)
+-- Get the current gauge selection for a player (env var or persisted pref)
 function GetFlareGaugeSelection(pn)
 	local short = ToEnumShortString(pn)
-	return getenv("FlareGaugeType" .. short) or "Normal"
+	local envVal = getenv("FlareGaugeType" .. short)
+	if envVal then return envVal end
+	-- Fallback to persisted profile pref
+	if GetPlayerGaugePref then
+		return GetPlayerGaugePref(pn)
+	end
+	return "Normal"
 end
 
 -- Initialize gauge state for a player at song start

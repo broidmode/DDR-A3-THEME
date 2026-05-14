@@ -15,6 +15,9 @@
 -- ChartResultsData[pn]["Songs/Pack/Dir/Difficulty_Hard"] = { lamp, flareGauge, flarePoints }
 ChartResultsData = ChartResultsData or {}
 
+-- PlayerPrefsData[pn] = { gaugeType = "Flare5", ... }
+PlayerPrefsData = PlayerPrefsData or {}
+
 -- ===== FLARE POINT TABLE =====
 -- Index 1 = Clear (Normal gauge), 2 = Flare I, ... 11 = Flare EX
 -- Row index = chart meter level (clamped to 1..19)
@@ -274,6 +277,112 @@ end
 
 local RESULTS_DIR = "DDR-A3/"
 local RESULTS_FILE = "ChartResults.lua"
+local PREFS_FILE = "PlayerPrefs.lua"
+
+-- ===== PLAYER PREFS PERSISTENCE =====
+-- Stores per-player preferences like gauge type selection
+
+local function SerializePrefs(tbl)
+	local lines = { "return {" }
+	if tbl.gaugeType then
+		lines[#lines+1] = string.format('  gaugeType = %q,', tbl.gaugeType)
+	end
+	lines[#lines+1] = "}"
+	return table.concat(lines, "\n")
+end
+
+function SavePlayerPrefs(pn, dir)
+	Trace("[PlayerPrefs] SavePlayerPrefs called for " .. tostring(pn) .. " dir=" .. tostring(dir))
+	local data = PlayerPrefsData[pn]
+	if not data or not next(data) then
+		Trace("[PlayerPrefs] No data to save for " .. tostring(pn))
+		return
+	end
+
+	local content = SerializePrefs(data)
+	local path = dir .. RESULTS_DIR .. PREFS_FILE
+	Trace("[PlayerPrefs] Attempting to save to: " .. path)
+	Trace("[PlayerPrefs] Content: " .. content)
+
+	-- Ensure directory exists by writing a temp marker
+	local dirPath = dir .. RESULTS_DIR
+	local f = RageFileUtil.CreateRageFile()
+	if f:Open(dirPath .. "_init", 2) then
+		f:Write("")
+		f:Close()
+		Trace("[PlayerPrefs] Directory marker created at " .. dirPath)
+	else
+		Warn("[PlayerPrefs] Failed to create directory marker: " .. f:GetError())
+	end
+	f:destroy()
+
+	-- Write the actual prefs file
+	f = RageFileUtil.CreateRageFile()
+	if f:Open(path, 2) then
+		f:Write(content)
+		f:Close()
+		Trace("[PlayerPrefs] SUCCESS - Saved for " .. tostring(pn) .. " to " .. path)
+	else
+		Warn("[PlayerPrefs] FAILED to save to " .. path .. " - Error: " .. f:GetError())
+	end
+	f:destroy()
+end
+
+function LoadPlayerPrefs(pn, dir)
+	PlayerPrefsData[pn] = {}
+	local path = dir .. RESULTS_DIR .. PREFS_FILE
+
+	local f = RageFileUtil.CreateRageFile()
+	if not f:Open(path, 1) then
+		f:destroy()
+		return
+	end
+	local content = f:Read()
+	f:Close()
+	f:destroy()
+
+	if not content or content == "" then return end
+
+	local fn, err = loadstring(content, path)
+	if fn then
+		local ok, result = pcall(fn)
+		if ok and type(result) == "table" then
+			PlayerPrefsData[pn] = result
+			-- Also set the env variable for runtime access
+			local short = ToEnumShortString(pn)
+			if result.gaugeType then
+				setenv("FlareGaugeType" .. short, result.gaugeType)
+			end
+			Trace("[PlayerPrefs] Loaded for " .. tostring(pn) .. ": gaugeType=" .. tostring(result.gaugeType))
+		end
+	end
+end
+
+-- Public API to get/set gauge preference (also updates env variable)
+function GetPlayerGaugePref(pn)
+	local data = PlayerPrefsData[pn]
+	return data and data.gaugeType or "Normal"
+end
+
+function SetPlayerGaugePref(pn, gaugeType)
+	Trace("[PlayerPrefs] SetPlayerGaugePref called - pn=" .. tostring(pn) .. " gaugeType=" .. tostring(gaugeType))
+	if not PlayerPrefsData[pn] then PlayerPrefsData[pn] = {} end
+	PlayerPrefsData[pn].gaugeType = gaugeType
+	local short = ToEnumShortString(pn)
+	setenv("FlareGaugeType" .. short, gaugeType)
+
+	-- Immediately save to player's profile directory
+	local slot = ({[PLAYER_1]='ProfileSlot_Player1', [PLAYER_2]='ProfileSlot_Player2'})[pn]
+	if slot then
+		local dir = PROFILEMAN:GetProfileDir(slot)
+		if dir and dir ~= "" then
+			Trace("[PlayerPrefs] Immediate save to: " .. dir)
+			SavePlayerPrefs(pn, dir)
+		else
+			Trace("[PlayerPrefs] No profile dir for " .. tostring(pn))
+		end
+	end
+end
 
 local function SerializeTable(tbl)
 	local lines = { "return {" }
@@ -374,16 +483,22 @@ end
 
 -- Called by the engine after loading a profile from disk.
 function LoadProfileCustom(profile, dir)
+	Trace("[ChartResults] LoadProfileCustom called - dir=" .. tostring(dir))
 	local pn = ProfileToPlayerNumber(profile)
+	Trace("[ChartResults] LoadProfileCustom - pn=" .. tostring(pn))
 	if pn then
 		LoadChartResults(pn, dir)
+		LoadPlayerPrefs(pn, dir)
 	end
 end
 
 -- Called by the engine when saving a profile to disk.
 function SaveProfileCustom(profile, dir)
+	Trace("[ChartResults] SaveProfileCustom called - dir=" .. tostring(dir))
 	local pn = ProfileToPlayerNumber(profile)
+	Trace("[ChartResults] SaveProfileCustom - pn=" .. tostring(pn))
 	if pn then
 		SaveChartResults(pn, dir)
+		SavePlayerPrefs(pn, dir)
 	end
 end

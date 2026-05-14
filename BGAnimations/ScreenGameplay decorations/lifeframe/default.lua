@@ -1,30 +1,10 @@
 local pn = ...
 local Risky = GAMESTATE:GetPlayerState(pn):GetPlayerOptions('ModsLevel_Current'):LifeSetting() == 'LifeType_Battery'
 
--- Check if using Flare gauge (set by OptionRowGauge)
-local short = ToEnumShortString(pn)
-local gaugeType = getenv("FlareGaugeType" .. short) or "Normal"
+-- Check if using Flare gauge - use selection (env var or persisted pref) since
+-- FlareGaugeState isn't initialized yet when actors are created
+local gaugeType = (GetFlareGaugeSelection and GetFlareGaugeSelection(pn)) or "Normal"
 local isFlareGauge = (gaugeType ~= "Normal" and gaugeType ~= "LIFE4" and gaugeType ~= "Risky")
-
--- Flare gauge colors by level (1=I through 10=EX)
-local FlareColors = {
-	color("#0066FF"),   -- I    Blue
-	color("#00CCFF"),   -- II   Cyan
-	color("#00FFCC"),   -- III  Teal
-	color("#00FF66"),   -- IV   Green
-	color("#66FF00"),   -- V    Lime
-	color("#CCFF00"),   -- VI   Yellow-Green
-	color("#FFCC00"),   -- VII  Gold
-	color("#FF6600"),   -- VIII Orange
-	color("#FF0066"),   -- IX   Pink
-	color("#CC00FF"),   -- EX   Magenta
-}
-local FlareDangerColor = color("#666666")  -- Gray when low
-local FlareFailColor = color("#FF0000")    -- Red on fail
-
--- Bar dimensions (matching existing life bar position)
-local BAR_WIDTH = 296
-local BAR_HEIGHT = 20
 
 local t = Def.ActorFrame{
 	InitCommand=function(s)
@@ -35,87 +15,82 @@ local t = Def.ActorFrame{
 
 if isFlareGauge then
 	-- ========== FLARE GAUGE DISPLAY ==========
+	-- Determine initial flare level for texture selection
+	local initialFlareLevel = 1
+	if gaugeType == "FloatingFlare" then
+		initialFlareLevel = 10  -- Floating starts at EX, drops down
+	else
+		local levelMatch = gaugeType:match("Flare(%d+)")
+		if levelMatch then
+			initialFlareLevel = tonumber(levelMatch)
+		elseif gaugeType == "FlareEX" then
+			initialFlareLevel = 10
+		end
+	end
+
+	-- Helper to get flare fill texture path
+	local function GetFlareTexturePath(level)
+		if level == 10 then
+			return THEME:GetPathB("","ScreenGameplay decorations/lifeframe/flare/gauge0000_gauge_flareex")
+		else
+			return THEME:GetPathB("","ScreenGameplay decorations/lifeframe/flare/gauge0000_gauge_flare"..level)
+		end
+	end
+	local FlareDangerPath = THEME:GetPathB("","ScreenGameplay decorations/lifeframe/flare/gauge0000_gauge_flare_danger")
+
+	-- Track current texture to avoid reloading (which resets scroll)
+	local currentTexturePath = GetFlareTexturePath(initialFlareLevel)
+
 	-- Base (background)
-	t[#t+1] = Def.Quad{
-		InitCommand=function(s)
-			s:x(pn==PLAYER_1 and -7 or 9)
-			s:zoomto(BAR_WIDTH, BAR_HEIGHT)
-			s:diffuse(color("#111122"))
-		end,
+	t[#t+1] = Def.Sprite{
+		Texture=THEME:GetPathB("","ScreenGameplay decorations/lifeframe/stream/base"),
+		InitCommand=function(s) s:x(pn==PLAYER_1 and -7 or 9):zoomto(296,20) end,
 	}
 
-	-- Fill bar (left-aligned, scales with life)
-	t[#t+1] = Def.Quad{
+	-- Fill bar - matches normal gauge setup exactly (textures have (stretch) hint)
+	t[#t+1] = Def.Sprite{
 		Name = "FlareFill",
-		InitCommand=function(s)
-			s:x(pn==PLAYER_1 and -7 or 9)
-			s:halign(pn==PLAYER_1 and 0 or 1)
-			s:x(pn==PLAYER_1 and (-7 - BAR_WIDTH/2) or (9 + BAR_WIDTH/2))
-			s:zoomto(BAR_WIDTH, BAR_HEIGHT)
-			s:diffuse(FlareColors[10])  -- Start at max color
+		Texture=currentTexturePath,
+		InitCommand=function(s) s:x(pn==PLAYER_1 and -8 or 10) end,
+		OnCommand=function(s)
+			s:scaletoclipped(296,20)
+			s:customtexturerect(0,0,1,1)
+			s:texcoordvelocity(pn==PLAYER_2 and 1.8 or -1.8, 0)  -- Scroll speed: higher = faster
 		end,
 		FlareGaugeChangedMessageCommand = function(self, params)
 			if params.Player ~= pn then return end
 
-			local life = params.Life or 0
-			local fillW = math.max(0, math.min(1, life)) * BAR_WIDTH
+			local life = math.max(0, math.min(1, params.Life or 0))
+			local flareIdx = params.FloatingCurrent or params.FlareIndex or initialFlareLevel
+			local empty = 1 - life
 
-			-- Determine color based on flare level
-			local flareIdx = params.FloatingCurrent or params.FlareIndex or 10
-			local c
-			if params.Failed then
-				c = FlareFailColor
-			elseif life < 0.2 then
-				c = FlareDangerColor
+			-- Determine what texture we SHOULD have
+			local wantTexture
+			if life < 0.2 and not params.Failed then
+				wantTexture = FlareDangerPath
 			else
-				c = FlareColors[flareIdx] or FlareColors[10]
+				wantTexture = GetFlareTexturePath(flareIdx)
 			end
 
-			self:stoptweening():linear(0.05)
-				:zoomto(fillW, BAR_HEIGHT)
-				:diffuse(c)
-		end,
-	}
+			-- Only reload if texture actually changed (preserves scroll position)
+			if wantTexture ~= currentTexturePath then
+				currentTexturePath = wantTexture
+				self:Load(wantTexture)
+				self:scaletoclipped(296,20)
+				self:customtexturerect(0,0,1,1)
+				self:texcoordvelocity(pn==PLAYER_2 and 1.8 or -1.8, 0)
+			end
 
-	-- Flare level label (shows "FLARE IX" or "FLOAT VII" etc)
-	t[#t+1] = Def.BitmapText{
-		Font = "_futura pt medium 30px",
-		Name = "FlareLabel",
-		InitCommand = function(s)
-			s:x(pn==PLAYER_1 and -7 or 9)
-			s:zoom(0.5)
-			s:diffuse(Color.White)
-			s:shadowlength(1)
-		end,
-		FlareGaugeChangedMessageCommand = function(self, params)
-			if params.Player ~= pn then return end
-			local displayName = GetFlareGaugeDisplayName(pn)
-			self:settext(displayName)
-		end,
-	}
-
-	-- Life percentage text (overlaid)
-	t[#t+1] = Def.BitmapText{
-		Font = "_futura pt medium 30px",
-		Name = "FlarePct",
-		InitCommand = function(s)
-			s:x(pn==PLAYER_1 and (BAR_WIDTH/2 - 30) or (-BAR_WIDTH/2 + 30))
-			s:zoom(0.4)
-			s:diffuse(Color.White)
-			s:shadowlength(1)
-		end,
-		FlareGaugeChangedMessageCommand = function(self, params)
-			if params.Player ~= pn then return end
-			if params.Failed then
-				self:settext("FAILED")
+			-- Crop based on life (P1 drains right-to-left, P2 drains left-to-right)
+			if pn == PLAYER_1 then
+				self:cropright(empty)
 			else
-				local pct = math.floor((params.Life or 0) * 100 + 0.5)
-				self:settext(pct .. "%")
+				self:cropleft(empty)
 			end
 		end,
 	}
 
-	-- Frame graphic (same as normal but with a different tint for Flare)
+	-- Frame graphic
 	t[#t+1] = Def.Sprite{
 		Name="LifeFrame"..pn,
 		InitCommand=function(s)
@@ -125,13 +100,12 @@ if isFlareGauge then
 			s:y(-0.5)
 		end,
 		BeginCommand=function(self)
-			-- Use gold frame for Flare gauges
 			self:Load(THEME:GetPathB("ScreenGameplay","decorations/lifeframe/"..Model().."normal"))
 		end
 	}
 
 else
-	-- ========== NORMAL / BATTERY GAUGE DISPLAY (existing code) ==========
+	-- ========== NORMAL / BATTERY GAUGE DISPLAY ==========
 	t[#t+1] = Def.Sprite{
 		Texture=THEME:GetPathB("","ScreenGameplay decorations/lifeframe/stream/base"),
 		InitCommand=function(s) s:x(pn==PLAYER_1 and -7 or 9):zoomto(296,20):diffusealpha(Risky and 0 or 1) end,

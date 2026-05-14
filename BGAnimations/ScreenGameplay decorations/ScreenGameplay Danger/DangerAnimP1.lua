@@ -19,6 +19,12 @@ return Def.ActorFrame{
 			Name="Danger";
 			HealthStateChangedMessageCommand=function(self, param)
 				if param.PlayerNumber == PLAYER_1 then
+					-- Skip engine danger state when using Flare gauge
+					local gaugeType = GetFlareGaugeSelection and GetFlareGaugeSelection(PLAYER_1) or "Normal"
+					if gaugeType ~= "Normal" and gaugeType ~= "LIFE4" and gaugeType ~= "Risky" then
+						self:RunCommandsOnChildren(cmd(playcommand,"Hide"))
+						return
+					end
 					if param.HealthState == "HealthState_Danger" then
 						self:RunCommandsOnChildren(cmd(playcommand,"Show"))
 					else
