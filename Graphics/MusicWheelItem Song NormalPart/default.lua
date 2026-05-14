@@ -157,6 +157,25 @@ return Def.ActorFrame{
 	Def.ActorFrame{
 		InitCommand=function(s) s:x(1):y(67) end,
 		Def.BitmapText{
+			Name="TranslitTitle";
+			Font="_futura pt medium 30px";
+			InitCommand=function(s)
+				s:y(-10):zoom(0.35):maxwidth(440)
+				s:strokecolor(color("0,0,0,0.5"))
+			end;
+			SetMessageCommand=function(s,p)
+				local song = p.Song
+				if song and GetTitleDisplayMode() == "Dual" and HasTranslitTitle(song) then
+					s:settext(GetTranslitTitle(song))
+					s:visible(true)
+				else
+					s:settext("")
+					s:visible(false)
+				end
+			end;
+		};
+		Def.BitmapText{
+			Name="Title";
 			Font="_wheelnames 28px",
 			InitCommand=function(s) s:zoom(0.6):maxwidth(260) end,
 			SetMessageCommand=function(s,p)
@@ -165,6 +184,11 @@ return Def.ActorFrame{
 					s:settext(GetSongName(song))
 					s:diffuse(SongAttributes.GetMenuColor(song))
 					s:strokecolor(color("0.15,0.15,0.0,0.9"))
+					if GetTitleDisplayMode() == "Dual" and HasTranslitTitle(song) then
+						s:y(4)
+					else
+						s:y(0)
+					end
 				end
 			end;
 		};

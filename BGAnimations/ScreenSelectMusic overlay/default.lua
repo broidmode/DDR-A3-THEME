@@ -37,45 +37,8 @@ t[#t+1] = loadfile(THEME:GetPathB("ScreenSelectMusic","overlay/StageDisplay"))()
 	OnCommand=function(s) s:zoom(0.667):diffusealpha(0):sleep(0.4):linear(0.05):diffusealpha(0.75):linear(0.1):diffusealpha(0.25):linear(0.1):diffusealpha(1) end,
 };
 
--- DEBUG: Radar values display (remove after testing)
-local debugRadar = Def.BitmapText{
-	Font="_avenirnext lt pro bold/20px",
-	InitCommand=function(s)
-		s:xy(SCREEN_CENTER_X, SCREEN_BOTTOM-120):zoom(0.7):halign(0.5)
-		s:strokecolor(color("#000000"))
-	end,
-	CurrentSongChangedMessageCommand=function(s) s:queuecommand("Update") end,
-	CurrentStepsP1ChangedMessageCommand=function(s) s:queuecommand("Update") end,
-	CurrentStepsP2ChangedMessageCommand=function(s) s:queuecommand("Update") end,
-	UpdateCommand=function(s)
-		local song = GAMESTATE:GetCurrentSong()
-		if not song then s:settext("") return end
-
-		local pn = GAMESTATE:GetMasterPlayerNumber()
-		local steps = GAMESTATE:GetCurrentSteps(pn)
-		if not steps then s:settext("No steps") return end
-
-		local rv = steps:GetRadarValues(pn)
-		local notes = rv:GetValue('RadarCategory_Notes')
-		local taps = rv:GetValue('RadarCategory_TapsAndHolds')
-		local jumps = rv:GetValue('RadarCategory_Jumps')
-		local hands = rv:GetValue('RadarCategory_Hands')
-		local holds = rv:GetValue('RadarCategory_Holds')
-		local rolls = rv:GetValue('RadarCategory_Rolls')
-		local mines = rv:GetValue('RadarCategory_Mines')
-
-		local calc = taps - jumps - (hands * 2)
-
-		s:settext(string.format(
-			"Notes=%d  TapsAndHolds=%d  Jumps=%d  Hands=%d\nHolds=%d  Rolls=%d  Mines=%d\nCalc (taps-jumps-2*hands)=%d",
-			notes, taps, jumps, hands, holds, rolls, mines, calc
-		))
-	end,
-}
-
 return Def.ActorFrame{
 	OffCommand=function(s) s:finishtweening() end,
 	TwoPart;
 	t;
-	debugRadar;
 }

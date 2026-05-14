@@ -722,4 +722,45 @@ function OptionRowGauge()
 	return t;
 end
 
+function OptionRowTitleDisplay()
+	local t = {
+		Name = "TitleDisplay";
+		LayoutType = "ShowAllInRow";
+		SelectType = "SelectOne";
+		OneChoiceForAllPlayers = true;
+		ExportOnChange = true;
+		Choices = {"Native", "Romanized", "Dual"};
+		LoadSelections = function(self, list, pn)
+			if ReadPrefFromFile("OptionRowTitleDisplay") ~= nil then
+				local pref = GetUserPref("OptionRowTitleDisplay")
+				if pref == "Native" then
+					list[1] = true
+				elseif pref == "Romanized" then
+					list[2] = true
+				elseif pref == "Dual" then
+					list[3] = true
+				else
+					list[1] = true
+				end
+			else
+				WritePrefToFile("OptionRowTitleDisplay", "Native")
+				list[1] = true
+			end
+		end;
+		SaveSelections = function(self, list, pn)
+			if list[1] then
+				WritePrefToFile("OptionRowTitleDisplay", "Native")
+			elseif list[2] then
+				WritePrefToFile("OptionRowTitleDisplay", "Romanized")
+			elseif list[3] then
+				WritePrefToFile("OptionRowTitleDisplay", "Dual")
+			else
+				WritePrefToFile("OptionRowTitleDisplay", "Native")
+			end
+		end;
+	};
+	setmetatable(t, t);
+	return t;
+end
+
 --Code by Midflight Digital

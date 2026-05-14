@@ -131,13 +131,43 @@ function SongORCourse()
 	end
 end
 
+function GetTitleDisplayMode()
+	if ReadPrefFromFile("OptionRowTitleDisplay") ~= nil then
+		return GetUserPref("OptionRowTitleDisplay")
+	else
+		return "Native"
+	end
+end
+
+function GetTranslitTitle(item)
+	local translit = item:GetTranslitMainTitle()
+	if translit and translit ~= "" then
+		return translit
+	end
+	return nil
+end
+
+function HasTranslitTitle(item)
+	local translit = item:GetTranslitMainTitle()
+	local main = item:GetDisplayMainTitle()
+	return translit and translit ~= "" and translit ~= main
+end
+
 function GetSongName(item)
 	local name = Basename(item:GetSongDir())
 	if name == "OurMemories" then
 		return "#OurMemories"
-	else
-		return item:GetDisplayMainTitle()
 	end
+
+	local mode = GetTitleDisplayMode()
+	if mode == "Romanized" then
+		local translit = GetTranslitTitle(item)
+		if translit then
+			return translit
+		end
+	end
+
+	return item:GetDisplayMainTitle()
 end
 
 function GetArtistName(item)

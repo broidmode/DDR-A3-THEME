@@ -46,15 +46,18 @@ function GetNormalScore(maxsteps,score,pn)
 	local w2 = score:GetTapNoteScore('TapNoteScore_W2');
 	local w3 = score:GetTapNoteScore('TapNoteScore_W3');
 	local w4 = score:GetTapNoteScore('TapNoteScore_W4');
-	local hd = score:GetHoldNoteScore('HoldNoteScore_Held');
+	-- OK = held holds + avoided shock arrows
+	local ok = score:GetHoldNoteScore('HoldNoteScore_Held') + score:GetTapNoteScore('TapNoteScore_AvoidMine');
 	if EXScore(pn) == "On" then
-		s = w1*3 + w2*2 + w3 + hd*3;
+		-- EX Score: W1*3 + W2*2 + W3*1 + OK*3
+		s = w1*3 + w2*2 + w3 + ok*3;
 	else
 		if PREFSMAN:GetPreference("AllowW1")~="AllowW1_Everywhere" then
 			w1 = w1+w2;
 			w2 = 0;
 		end;
-		s = (math.round( (w1 + w2 + w3*0.6 + w4*0.2 + hd)*100000/maxsteps-(w2 + w3 + w4))*10);
+		-- DDR A3 Score: floor((w1+w2+w3*0.6+w4*0.2+ok)*100000/maxsteps - (w2+w3+w4)) * 10
+		s = (math.floor( (w1 + w2 + w3*0.6 + w4*0.2 + ok)*100000/maxsteps-(w2 + w3 + w4))*10);
 	end;
 	return s;
 end;
@@ -88,8 +91,21 @@ if not GAMESTATE:IsDemonstration() and not GAMESTATE:IsCourseMode() and GAMESTAT
 	local steps = GAMESTATE:GetCurrentSteps(pn);
 	local rv = steps:GetRadarValues(pn);
 	local pss = STATSMAN:GetCurStageStats():GetPlayerStageStats(pn);
-	local maxsteps = math.max(rv:GetValue('RadarCategory_TapsAndHolds')
-	+rv:GetValue('RadarCategory_Holds')+rv:GetValue('RadarCategory_Rolls'),1);
+
+	-- Use ChartParser for accurate DDR A3 maxsteps
+	local chartData = ChartParser.GetMaxSteps(pn)
+	local maxsteps
+	if chartData then
+		maxsteps = chartData.maxsteps
+	else
+		-- Fallback to radar-based estimate if parsing fails
+		local tapsAndHolds = rv:GetValue('RadarCategory_TapsAndHolds')
+		local holds = rv:GetValue('RadarCategory_Holds')
+		local rolls = rv:GetValue('RadarCategory_Rolls')
+		local mines = rv:GetValue('RadarCategory_Mines')
+		local shockRows = math.floor(mines / 4)
+		maxsteps = math.max(tapsAndHolds + holds + rolls + shockRows, 1)
+	end
 
 	local scores = GetMachinePersonalHighScores(pn);
 	assert(scores);
@@ -146,21 +162,31 @@ if not GAMESTATE:IsDemonstration() and not GAMESTATE:IsCourseMode() and GAMESTAT
 				if GAMESTATE:GetPlayerState(pn):GetHealthState() == "HealthState_Dead" then return end
 				if params.Player ~= pn then return end;
 				self:finishtweening();
-				if params.TapNoteScore and
-				   params.TapNoteScore ~= 'TapNoteScore_AvoidMine' and
-				   params.TapNoteScore ~= 'TapNoteScore_HitMine' and
-				   params.TapNoteScore ~= 'TapNoteScore_CheckpointMiss' and
-				   params.TapNoteScore ~= 'TapNoteScore_CheckpointHit' and
-				   params.TapNoteScore ~= 'TapNoteScore_None'
-				then
+
+				-- Process tap judgments (W1-W4, Miss) and shock arrow avoids
+				local dominated = params.TapNoteScore and (
+				   params.TapNoteScore == 'TapNoteScore_W1' or
+				   params.TapNoteScore == 'TapNoteScore_W2' or
+				   params.TapNoteScore == 'TapNoteScore_W3' or
+				   params.TapNoteScore == 'TapNoteScore_W4' or
+				   params.TapNoteScore == 'TapNoteScore_Miss' or
+				   params.TapNoteScore == 'TapNoteScore_AvoidMine' -- Shock arrow OK
+				)
+
+				if dominated or params.HoldNoteScore == 'HoldNoteScore_Held' then
 					local ret=0;
 					local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 					local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 					local w3=pss:GetTapNoteScores('TapNoteScore_W3');
 					local w4=pss:GetTapNoteScores('TapNoteScore_W4');
-					local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
+					-- OK = held holds + avoided shock arrows
+					local ok=pss:GetHoldNoteScores('HoldNoteScore_Held') + pss:GetTapNoteScores('TapNoteScore_AvoidMine');
+
+					-- Add current judgment (not yet counted in pss)
 					if params.HoldNoteScore=='HoldNoteScore_Held' then
-						hd=hd+1;
+						ok=ok+1;
+					elseif params.TapNoteScore=='TapNoteScore_AvoidMine' then
+						ok=ok+1;
 					elseif params.TapNoteScore=='TapNoteScore_W1' then
 						w1=w1+1;
 					elseif params.TapNoteScore=='TapNoteScore_W2' then
@@ -172,7 +198,8 @@ if not GAMESTATE:IsDemonstration() and not GAMESTATE:IsCourseMode() and GAMESTAT
 					end;
 
 					if bEXScore == "On" then
-						ret = w1*3 + w2*2 + w3;
+						-- EX Score: W1*3 + W2*2 + W3*1 + OK*3
+						ret = w1*3 + w2*2 + w3 + ok*3;
 						ts[p] = ts[p] + moto
 						local last = math.round((ret-ts[p]));
 						if last > 0 then
@@ -186,7 +213,8 @@ if not GAMESTATE:IsDemonstration() and not GAMESTATE:IsCourseMode() and GAMESTAT
 							self:settext("0");
 						end;
 					else
-						ret=(math.round((w1 + w2 + w3*0.6 + w4*0.2 + hd) *100000/maxsteps-(w2 + w3 + w4))*10);
+						-- DDR A3 Score: floor((w1+w2+w3*0.6+w4*0.2+ok)*100000/maxsteps - (w2+w3+w4)) * 10
+						ret=(math.floor((w1 + w2 + w3*0.6 + w4*0.2 + ok) *100000/maxsteps-(w2 + w3 + w4))*10);
 						ts[p] = ts[p] + moto
 						local last = math.round((ret-ts[p])*0.1);
 						if last > 0 then
@@ -200,7 +228,7 @@ if not GAMESTATE:IsDemonstration() and not GAMESTATE:IsCourseMode() and GAMESTAT
 							self:settext("±0");
 						end;
 					end;
-					
+
 					self:diffusealpha(1)
 				end;
 			end;

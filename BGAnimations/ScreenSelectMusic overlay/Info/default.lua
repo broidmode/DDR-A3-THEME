@@ -33,6 +33,24 @@ return Def.ActorFrame{
 		InitCommand=cmd(xy,-90,-7);
 			LoadActor(Model().."info")..{ InitCommand=function(s) s:x(12):y(23) end, };
 		
+		Def.BitmapText{
+			Name="TranslitTitle";
+			Font="_futura pt medium 30px";
+			InitCommand=function(s)
+				s:xy(-235,-16):zoom(0.5):halign(0):maxwidth(880)
+				s:strokecolor(color("0,0,0,0.5"))
+			end;
+			SetCommand=function(s)
+				local song = GAMESTATE:GetCurrentSong()
+				if song and GetTitleDisplayMode() == "Dual" and HasTranslitTitle(song) then
+					s:settext(GetTranslitTitle(song))
+					s:visible(true)
+				else
+					s:settext("")
+					s:visible(false)
+				end
+			end
+		};
 		LoadFont("_swis721 blk bt 28px")..{
 			Name="Title";
 			InitCommand=cmd(xy,-235,-1;zoom,0.8;halign,0;maxwidth,560;diffuse,color("White"));
@@ -40,6 +58,11 @@ return Def.ActorFrame{
 				local song = GAMESTATE:GetCurrentSong()
 				if song then
 					s:settext(GetSongName(song))
+					if GetTitleDisplayMode() == "Dual" and HasTranslitTitle(song) then
+						s:y(5)
+					else
+						s:y(-1)
+					end
 				end
 			end
 		};

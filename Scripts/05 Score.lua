@@ -1,9 +1,30 @@
 function GetTotalItems(radars)
 	local total = radars:GetValue('RadarCategory_TapsAndHolds')
-	total = total + radars:GetValue('RadarCategory_Holds') 
+	total = total + radars:GetValue('RadarCategory_Holds')
 	total = total + radars:GetValue('RadarCategory_Rolls')
 	return math.max(1,total);
 end;
+
+-- Get DDR A3 accurate maxsteps using ChartParser
+-- Falls back to radar-based estimate if parsing fails
+function GetDDRA3MaxSteps(pn, rv)
+	local chartData = ChartParser and ChartParser.GetMaxSteps(pn)
+	if chartData then
+		return chartData.maxsteps
+	end
+	-- Fallback: use radar values with shock arrow estimate
+	local tapsAndHolds = rv:GetValue('RadarCategory_TapsAndHolds')
+	local holds = rv:GetValue('RadarCategory_Holds')
+	local rolls = rv:GetValue('RadarCategory_Rolls')
+	local mines = rv:GetValue('RadarCategory_Mines')
+	local shockRows = math.floor(mines / 4)
+	return math.max(tapsAndHolds + holds + rolls + shockRows, 1)
+end
+
+-- Get OK count (held holds + avoided shock arrows)
+function GetOKCount(pss)
+	return pss:GetHoldNoteScores('HoldNoteScore_Held') + pss:GetTapNoteScores('TapNoteScore_AvoidMine')
+end
 
 -- [ja] CustomScore_SM5b1(プレイヤー,モード,steps,現在のステップ数,最後の判定) 
 function CustomScore_SM5b1(params,scoremode,steps,cur)
@@ -19,14 +40,18 @@ function CustomScore_SM5b1(params,scoremode,steps,cur)
 			+rv:GetValue('RadarCategory_Holds')+rv:GetValue('RadarCategory_Rolls'),1);
 			
 		if scoremode=="A3" then
+			local a3maxsteps = GetDDRA3MaxSteps(pn, rv);
 			local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 			local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 			local w3=pss:GetTapNoteScores('TapNoteScore_W3');
 			local w4=pss:GetTapNoteScores('TapNoteScore_W4');
-			local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
+			local ok=GetOKCount(pss);
 			local minus=0;	-- [ja] b1では強制でデフォルトスコア計算の値が加算されるのでマイナスする
 			if params.HoldNoteScore=='HoldNoteScore_Held' then
-				hd=hd+1;
+				ok=ok+1;
+				minus=5;
+			elseif params.TapNoteScore=='TapNoteScore_AvoidMine' then
+				ok=ok+1;
 				minus=5;
 			elseif params.TapNoteScore=='TapNoteScore_W1' then
 				w1=w1+1;
@@ -43,7 +68,7 @@ function CustomScore_SM5b1(params,scoremode,steps,cur)
 			elseif params.TapNoteScore=='TapNoteScore_W5' then
 				minus=1;
 			end;
-			ret=(math.round((w1 + w2 + w3*0.6 + w4*0.2 + hd) *100000/maxsteps-(w2 + w3 + w4))*10)-minus;
+			ret=(math.floor((w1 + w2 + w3*0.6 + w4*0.2 + ok) *100000/a3maxsteps-(w2 + w3 + w4))*10)-minus;
 			pss:SetScore(ret);
 
 		elseif scoremode=="SuperNOVA2" then
@@ -131,14 +156,18 @@ function CustomScore_SM5b2(params,scoremode,steps,cur)
 			+rv:GetValue('RadarCategory_Holds')+rv:GetValue('RadarCategory_Rolls'),1);
 
 		if scoremode=="A3" then
+			local a3maxsteps = GetDDRA3MaxSteps(pn, rv);
 			local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 			local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 			local w3=pss:GetTapNoteScores('TapNoteScore_W3');
 			local w4=pss:GetTapNoteScores('TapNoteScore_W4');
-			local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
-			local minus=0;	-- [ja] b1では強制でデフォルトスコア計算の値が加算されるのでマイナスする 
+			local ok=GetOKCount(pss);
+			local minus=0;
 			if params.HoldNoteScore=='HoldNoteScore_Held' then
-				hd=hd+1;
+				ok=ok+1;
+				minus=5;
+			elseif params.TapNoteScore=='TapNoteScore_AvoidMine' then
+				ok=ok+1;
 				minus=5;
 			elseif params.TapNoteScore=='TapNoteScore_W1' then
 				w1=w1+1;
@@ -156,17 +185,15 @@ function CustomScore_SM5b2(params,scoremode,steps,cur)
 				minus=1;
 			end;
 
-
-			ret=(math.round((w1 + w2 + w3*(0.6) + w4*(0.2) + hd) *100000/maxsteps-(w2 + w3 + w4))*10);
+			ret=(math.floor((w1 + w2 + w3*0.6 + w4*0.2 + ok) *100000/a3maxsteps-(w2 + w3 + w4))*10);
 			pss:SetScore(ret);
-			
-			--pss:SetScore(5000);
+
 		elseif scoremode=="SuperNOVA2" then
 			local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 			local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 			local w3=pss:GetTapNoteScores('TapNoteScore_W3');
 			local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
-			local minus=0;	-- [ja] b1では強制でデフォルトスコア計算の値が加算されるのでマイナスする 
+			local minus=0;
 			if params.HoldNoteScore=='HoldNoteScore_Held' then
 				hd=hd+1;
 				minus=5;
@@ -272,14 +299,17 @@ function CustomScore_SM5a2(params,scoremode,steps,cur)
 			
 			
 		if scoremode=="A3" then
+			local a3maxsteps = GetDDRA3MaxSteps(pn, rv);
 			local w1=pss:GetTapNoteScores('TapNoteScore_W1');
 			local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 			local w3=pss:GetTapNoteScores('TapNoteScore_W3');
 			local w4=pss:GetTapNoteScores('TapNoteScore_W4');
-			local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
+			local ok=GetOKCount(pss);
 			if params.HoldNoteScore=='HoldNoteScore_LetGo' then
 			elseif params.HoldNoteScore=='HoldNoteScore_Held' then
-				hd=hd+1;
+				ok=ok+1;
+			elseif params.TapNoteScore=='TapNoteScore_AvoidMine' then
+				ok=ok+1;
 			elseif params.TapNoteScore=='TapNoteScore_W1' then
 				w1=w1+1;
 			elseif params.TapNoteScore=='TapNoteScore_W2' then
@@ -289,7 +319,7 @@ function CustomScore_SM5a2(params,scoremode,steps,cur)
 			elseif params.TapNoteScore=='TapNoteScore_W4' then
 				w4=w4+1;
 			end;
-			ret=(math.round((w1 + w2 + w3*0.6 + w4*0.2 + hd) *100000/maxsteps-(w2 + w3 + w4))*10);
+			ret=(math.floor((w1 + w2 + w3*0.6 + w4*0.2 + ok) *100000/a3maxsteps-(w2 + w3 + w4))*10);
 			CustomScore_SM5a2_Set(pn,ret);
 
 		elseif scoremode=="SuperNOVA2" then
@@ -364,19 +394,21 @@ function GetCustomScoreMode()
 	return customscore;
 end;
 
--- Normal Score
+-- Normal Score (from high score record)
 function GetNormalScore(maxsteps,score,player)
 	local s;
 	local w1 = score:GetTapNoteScore('TapNoteScore_W1');
 	local w2 = score:GetTapNoteScore('TapNoteScore_W2');
 	local w3 = score:GetTapNoteScore('TapNoteScore_W3');
 	local w4 = score:GetTapNoteScore('TapNoteScore_W4');
-	local hd = score:GetHoldNoteScore('HoldNoteScore_Held');
+	-- OK = held holds + avoided shock arrows
+	local ok = score:GetHoldNoteScore('HoldNoteScore_Held') + score:GetTapNoteScore('TapNoteScore_AvoidMine');
 	if PREFSMAN:GetPreference("AllowW1")~="AllowW1_Everywhere" then
-			w1 = w1+w2;
-			w2 = 0;
-		end;
-		s = (math.round( (w1 + w2 + w3*0.6 + w4*0.2 + hd)*100000/maxsteps-(w2 + w3 + w4))*10);
+		w1 = w1+w2;
+		w2 = 0;
+	end;
+	-- DDR A3: floor((w1+w2+w3*0.6+w4*0.2+ok)*100000/maxsteps - (w2+w3+w4)) * 10
+	s = (math.floor( (w1 + w2 + w3*0.6 + w4*0.2 + ok)*100000/maxsteps-(w2 + w3 + w4))*10);
 	return s;
 end;
 
@@ -387,12 +419,14 @@ function GetEvaScore(maxsteps,pss,pn)
 	local w2=pss:GetTapNoteScores('TapNoteScore_W2');
 	local w3=pss:GetTapNoteScores('TapNoteScore_W3');
 	local w4=pss:GetTapNoteScores('TapNoteScore_W4');
-	local hd=pss:GetHoldNoteScores('HoldNoteScore_Held');
+	-- OK = held holds + avoided shock arrows
+	local ok=pss:GetHoldNoteScores('HoldNoteScore_Held') + pss:GetTapNoteScores('TapNoteScore_AvoidMine');
 	if PREFSMAN:GetPreference("AllowW1")~="AllowW1_Everywhere" then
-			w1=w1+w2;
-			w2=0;
-		end;
-		score = (math.round( (w1 + w2 + w3*0.6 + w4*0.2 + hd)*100000/maxsteps-(w2 + w3 + w4))*10);
+		w1=w1+w2;
+		w2=0;
+	end;
+	-- DDR A3: floor((w1+w2+w3*0.6+w4*0.2+ok)*100000/maxsteps - (w2+w3+w4)) * 10
+	score = (math.floor( (w1 + w2 + w3*0.6 + w4*0.2 + ok)*100000/maxsteps-(w2 + w3 + w4))*10);
 	return score;
 end;
 
