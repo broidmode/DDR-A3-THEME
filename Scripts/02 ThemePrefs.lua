@@ -1,9 +1,31 @@
 -- sm-ssc Default Theme Preferences Handler
 
--- Example usage of new system (not really implemented yet)
-local Prefs = {}
+local Prefs = {
+	-- Music select sorting — two-letter codes set first/last priority
+	-- L = Latin, J = Japanese, N = Numbers. Unlisted fills middle.
+	JapaneseSorting = {
+		Default = "nl",
+		Choices = { "J,N,L", "L,N,J", "J,L,N", "N,L,J", "L,J,N", "N,J,L", "Romaji" },
+		Values  = { "jl",   "lj",    "jn",    "nj",    "ln",    "nl",    "romaji" },
+	},
+	-- Music select jacket loading quality
+	JacketQuality = {
+		Default = "incremental",
+		Choices = { "Low", "Incremental", "Unlimited" },
+		Values  = { "low", "incremental", "full" },
+	},
+}
 
 ThemePrefs.InitAll(Prefs)
+
+-- Convenience wrappers for new prefs
+function GetA3Pref(key)
+	return ThemePrefs.Get(key)
+end
+
+function SetA3Pref(key, value)
+	ThemePrefs.Set(key, value)
+end
 
 
 function InitUserPrefs()

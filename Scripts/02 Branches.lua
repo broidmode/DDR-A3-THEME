@@ -16,11 +16,16 @@ function SMOnlineScreen()
 	return "ScreenNetRoom"
 end
 
+-- Toggle for custom music select screen (set to true to use ScreenA3Music)
+USE_CUSTOM_MUSIC_SELECT = true
+
 function SelectMusicOrCourse()
 	if IsNetSMOnline() then
 		return "ScreenNetSelectMusic"
 	elseif GAMESTATE:IsCourseMode() then
 		return "ScreenSelectCourse"
+	elseif USE_CUSTOM_MUSIC_SELECT then
+		return "ScreenA3Music"
 	else
 		return "ScreenSelectMusic"
 	end
@@ -34,6 +39,7 @@ end
 
 Branch = {
 	Init = function() return "ScreenInit" end,
+	SelectMusicOrCourse = SelectMusicOrCourse,
 	AfterInit = function()
 		if GAMESTATE:GetCoinMode() == 'CoinMode_Home' then
 			return Branch.TitleMenu()
@@ -129,7 +135,7 @@ Branch = {
 		if GAMESTATE:IsCourseMode() then
 			return "ScreenSelectCourse"
 		else
-			return "ScreenSelectMusic"
+			return SelectMusicOrCourse()
 		end
 	end,
 	AfterSelectProfile = function()

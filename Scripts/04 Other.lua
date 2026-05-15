@@ -6,6 +6,39 @@ function ThemeManager:GetAbsolutePath(sPath, optional)
 	return sFinPath
 end
 
+-- ============================================================================
+-- ITGmania Compatibility Helpers (from GALAXY)
+-- ============================================================================
+
+-- Def.Text shim: ITGmania only has BitmapText, not runtime FreeType.
+-- This allows code written for Def.Text{} to work unchanged.
+rawset(Def, "Text", function(params)
+	params.Size = nil           -- BitmapText doesn't support Size
+	params.Class = "BitmapText"
+	setmetatable(params, DefMetatable)
+	return params
+end)
+
+-- Actor.Regen shim: OutFox's Def.Text had :Regen() for forced relayout.
+-- ITGmania's BitmapText does this automatically in settext().
+if Actor and Actor.Regen == nil then
+	Actor.Regen = function(self) return self end
+end
+
+-- Number → comma-separated string (1234567 → "1,234,567")
+function commify(n)
+	local s = tostring(math.floor(n))
+	local pos = #s % 3
+	if pos == 0 then pos = 3 end
+	local parts = { s:sub(1, pos) }
+	for i = pos + 1, #s, 3 do
+		parts[#parts + 1] = s:sub(i, i + 2)
+	end
+	return table.concat(parts, ",")
+end
+
+-- ============================================================================
+
 function GetJacketPath(item, fallback) 
 	if item:HasJacket() then
 		return item:GetJacketPath()
