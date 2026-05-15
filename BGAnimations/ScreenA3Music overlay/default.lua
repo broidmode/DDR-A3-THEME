@@ -9,15 +9,13 @@ local COLS = 3
 local POOL_CARDS = 75
 local POOL_HEADERS = 30
 
--- Stagger offsets for DDR A3 pseudo-3D perspective (from MusicWheelItem)
-local STAGGER = {
-	[0] = { x = -304, y = 107 },   -- left column
-	[1] = { x = 0,    y = 0 },     -- center column
-	[2] = { x = 304,  y = -107 },  -- right column
-}
-
 -- Animation
 local ANIM_DUR = 0.15  -- scroll animation duration in seconds
+
+-- Graphics paths
+local ThemeDir = THEME:GetCurrentThemeDirectory()
+local sharedPath = ThemeDir .. "Graphics/_shared/"
+local footerPath = ThemeDir .. "Graphics/ScreenWithMenuElements footer/"
 
 -- ============================================================================
 -- STATE
@@ -31,6 +29,9 @@ local CardPool = {}
 local HeaderPool = {}
 local CardAssign = {}    -- CardAssign[poolIdx] = flatIdx
 local CardByFlat = {}    -- CardByFlat[flatIdx] = poolIdx
+
+-- Forward declaration for layout cache rebuild (defined in LAYOUT section)
+local RebuildLayoutCache
 
 -- Animation state
 local VisualOffset = 0
@@ -60,6 +61,9 @@ local PreviewGen = 0           -- generation counter to cancel stale previews
 local CurrentPreviewPath = nil -- path of currently playing preview
 local PREVIEW_DELAY = 0.3      -- seconds before starting preview
 
+-- Button state tracking (for simultaneous press detection)
+local ButtonHeld = {}  -- ButtonHeld["MenuUp"] = true/false
+
 -- Cursor persistence (survives screen transitions)
 A3MusicCursorState = A3MusicCursorState or {}
 
@@ -80,6 +84,7 @@ local function RestoreCursorState()
 	if saved.openGroup and saved.openGroup ~= "" then
 		OpenGroup = saved.openGroup
 		BuildFlatList()
+		if RebuildLayoutCache then RebuildLayoutCache() end
 	end
 	if saved.cursor and saved.cursor >= 1 and saved.cursor <= #FlatList then
 		Cursor = saved.cursor
@@ -218,7 +223,38 @@ local function ToggleGroup(groupName)
 		OpenGroup = groupName
 	end
 	BuildFlatList()
+	-- Keep cursor on the group header after rebuild
+	for i, item in ipairs(FlatList) do
+		if type(item) == "string" and item == groupName then
+			Cursor = i
+			break
+		end
+	end
+	RebuildLayoutCache()
 	MESSAGEMAN:Broadcast("CursorChanged")
+end
+
+-- Jump cursor to the header of the current folder
+local function JumpToFolderHeader()
+	if IsGroup(Cursor) then return end  -- already on a header
+	-- Walk backward to find the nearest group header
+	local idx = Cursor
+	local n = #FlatList
+	for _ = 1, n do
+		idx = Wrap(idx - 1)
+		if IsGroup(idx) then
+			local oldCursor = Cursor
+			Cursor = idx
+			local offset = CalcScrollOffset(oldCursor, Cursor)
+			if offset ~= 0 then
+				StartScrollAnim(offset, 0)
+			end
+			Refresh()
+			MESSAGEMAN:Broadcast("CursorChanged")
+			SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
+			return
+		end
+	end
 end
 
 -- ============================================================================
@@ -228,23 +264,89 @@ end
 -- Root frame for all pool actors (populated in OnCommand)
 local PoolRoot = nil
 
--- Get the model prefix (gold/blue) based on game state
+-- Get the model prefix (gold/blue) - uses theme's Model() function if available
 local function GetModel()
+	if Model then
+		return Model()
+	end
 	if GAMESTATE:IsExtraStage() or GAMESTATE:IsExtraStage2() then
 		return "blue_"
 	end
 	return "gold_"
 end
 
--- Theme directory for texture loading
-local ThemeDir = THEME:GetCurrentThemeDirectory()
+-- Helper: Get lamp texture path based on lamp type
+local function GetLampTexture(lampType)
+	local lampPath = THEME:GetCurrentThemeDirectory() .. "Graphics/MusicWheelItem Song NormalPart/lamp/"
+	local mapping = {
+		MFC = "ClearedMark MFC.png",
+		PFC = "ClearedMark PFC.png",
+		GFC = "ClearedMark GreatFC.png",
+		FC = "ClearedMark GoodFC.png",
+		Clear = "ClearedMark LifeBar.png",
+		LIFE4 = "ClearedMark Risky.png",
+		Failed = "ClearedMark Failed.png",
+	}
+	local file = mapping[lampType]
+	if file then return lampPath .. file end
+	return nil
+end
+
+-- Helper: Get flare badge texture path
+local function GetFlareBadgeTexture(flareGauge)
+	if not flareGauge then return nil end
+	local flarePath = THEME:GetCurrentThemeDirectory() .. "Graphics/MusicWheelItem Song NormalPart/flare/"
+	local level = flareGauge:match("^Flare(%d+)$")
+	local filename
+	if level then
+		filename = "scre_flare_level_" .. level .. ".png"
+	elseif flareGauge == "FlareEX" then
+		filename = "scre_flare_level_ex.png"
+	else
+		return nil
+	end
+	local fullPath = flarePath .. filename
+	if FILEMAN:DoesFileExist(fullPath) then
+		return fullPath
+	end
+	return nil
+end
+
+-- Helper: Determine lamp type from high score
+local function GetLampFromHighScore(score)
+	if not score or score:GetScore() <= 0 then return nil end
+
+	local misses = score:GetTapNoteScore("TapNoteScore_Miss")
+	             + score:GetTapNoteScore("TapNoteScore_CheckpointMiss")
+	             + score:GetTapNoteScore("TapNoteScore_HitMine")
+	             + score:GetTapNoteScore("TapNoteScore_W5")
+	local goods = score:GetTapNoteScore("TapNoteScore_W4")
+	local greats = score:GetTapNoteScore("TapNoteScore_W3")
+	local perfects = score:GetTapNoteScore("TapNoteScore_W2")
+	local hasUsedBattery = string.find(score:GetModifiers() or "", "Lives")
+
+	if misses == 0 and (score:GetTapNoteScore("TapNoteScore_W1") + perfects) > 0 then
+		if greats == 0 and perfects == 0 then
+			return "MFC"
+		elseif greats == 0 then
+			return "PFC"
+		elseif goods == 0 then
+			return "GFC"
+		else
+			return "FC"
+		end
+	elseif score:GetGrade() ~= "Grade_Failed" then
+		return hasUsedBattery and "LIFE4" or "Clear"
+	else
+		return "Failed"
+	end
+end
 
 -- Timing - accumulated from frame deltas
 local AccumulatedTime = 0
 
 -- Factory: Create a song card actor
 local function MakeSongCard(idx)
-	local model = GetModel()
 	local cardPath = ThemeDir .. "Graphics/MusicWheelItem Song NormalPart/"
 
 	local card = Def.ActorFrame{
@@ -253,14 +355,24 @@ local function MakeSongCard(idx)
 			self:visible(false)
 			self.poolIdx = idx
 			self.flatIdx = nil
+			self.model = GetModel()
 		end,
 
 		-- Main card background
 		Def.Sprite{
 			Name = "CardBG",
 			InitCommand = function(s)
-				s:Load(cardPath .. model .. "card.png")
+				local m = GetModel()
+				s:Load(cardPath .. m .. "card.png")
 				s:zoom(0.94)
+			end,
+		},
+
+		-- Golden League overlay (for special songs)
+		Def.Sprite{
+			Name = "LeagueOverlay",
+			InitCommand = function(s)
+				s:zoom(0.94):visible(false)
 			end,
 		},
 
@@ -271,97 +383,130 @@ local function MakeSongCard(idx)
 		},
 
 		-- Highlight frame (shown when focused)
+		Def.ActorFrame{
+			Name = "Highlights",
+			InitCommand = function(s) s:x(-4):visible(false) end,
+
+			Def.Sprite{
+				Name = "HighSprite",
+				InitCommand = function(s)
+					local m = GetModel()
+					s:Load(cardPath .. m .. "high.png")
+					s:zoom(0.94):x(5)
+					s:diffuseramp():effectcolor1(color("1,1,1,0.2")):effectcolor2(color("1,1,1,1")):effectperiod(0.5)
+				end,
+			},
+
+			Def.ActorFrame{
+				InitCommand = function(s)
+					s:diffuseramp():effectcolor1(color("1,1,1,0")):effectcolor2(color("1,1,1,1")):effectperiod(0.5)
+				end,
+				Def.Sprite{
+					Name = "LineSprite",
+					InitCommand = function(s)
+						local m = GetModel()
+						s:Load(cardPath .. m .. "line.png")
+						s:zoom(0.94):x(5)
+						s:thump(1):effectmagnitude(1.1,1,0):effectperiod(0.5)
+					end,
+				},
+			},
+		},
+
+		-- "NEW" badge
 		Def.Sprite{
-			Name = "Highlight",
+			Name = "NewBadge",
 			InitCommand = function(s)
-				s:Load(cardPath .. model .. "high.png")
-				s:zoom(0.94):visible(false)
-				s:diffuseramp():effectcolor1(color("1,1,1,0.2")):effectcolor2(color("1,1,1,1")):effectperiod(0.5)
+				local m = GetModel()
+				s:Load(cardPath .. m .. "new.png")
+				s:xy(90, -67):halign(1):zoom(0.5):visible(false)
 			end,
 		},
 
-		-- Highlight line
-		Def.Sprite{
-			Name = "HighlightLine",
-			InitCommand = function(s)
-				s:Load(cardPath .. model .. "line.png")
-				s:zoom(0.94):visible(false)
-				s:diffuseramp():effectcolor1(color("1,1,1,0")):effectcolor2(color("1,1,1,1")):effectperiod(0.5)
-				s:thump(1):effectmagnitude(1.1,1,0):effectperiod(0.5)
-			end,
+		-- Clear lamp bases
+		Def.ActorFrame{
+			Name = "ClearBases",
+			Def.Sprite{
+				Name = "ClearBaseR",
+				InitCommand = function(s)
+					s:Load(cardPath .. "cleared.png")
+					s:xy(54.9, 3)
+				end,
+			},
+			Def.Sprite{
+				Name = "ClearBaseL",
+				InitCommand = function(s)
+					s:Load(cardPath .. "cleared.png")
+					s:xy(-60, 3):zoomx(-1)
+				end,
+			},
 		},
 
-		-- Clear lamp base (left)
-		Def.Sprite{
-			Name = "ClearBaseL",
-			InitCommand = function(s)
-				s:Load(cardPath .. "cleared.png")
-				s:xy(-60, 3):zoomx(-1)
-			end,
-		},
-
-		-- Clear lamp base (right)
-		Def.Sprite{
-			Name = "ClearBaseR",
-			InitCommand = function(s)
-				s:Load(cardPath .. "cleared.png")
-				s:xy(54.9, 3)
-			end,
-		},
-
-		-- Title text
-		Def.BitmapText{
-			Name = "Title",
-			Font = "_wheelnames 28px",
-			InitCommand = function(s)
-				s:xy(1, 67):zoom(0.6):maxwidth(260)
-				s:strokecolor(color("0.15,0.15,0.0,0.9"))
-			end,
-		},
-
-		-- Transliterated title (small, above main title)
-		Def.BitmapText{
-			Name = "TranslitTitle",
-			Font = "_futura pt medium 30px",
-			InitCommand = function(s)
-				s:xy(1, 57):zoom(0.35):maxwidth(440)
-				s:strokecolor(color("0,0,0,0.5"))
-				s:visible(false)
-			end,
-		},
-
-		-- Difficulty hex background
-		Def.Sprite{
-			Name = "DiffHex",
-			InitCommand = function(s)
-				s:Load(ThemeDir .. "Graphics/_shared/" .. model .. "hex.png")
-				s:xy(-74, -36):zoom(0.37)
-			end,
-		},
-
-		-- Difficulty line overlay (colored by difficulty)
-		Def.Sprite{
-			Name = "DiffLine",
-			InitCommand = function(s)
-				s:Load(cardPath .. "line.png")
-				s:xy(-74, -36):zoom(0.37)
-			end,
-		},
-
-		-- Difficulty number
-		Def.BitmapText{
-			Name = "DiffNum",
-			Font = "_impact 32px",
-			InitCommand = function(s)
-				s:xy(-75, -36):zoom(0.8)
-				s:diffuse(color("#FFFFFF")):strokecolor(color("#000000"))
-			end,
-		},
-
-		-- Clear lamp sprite
+		-- Clear lamp sprite (per-player, but we show P1 for simplicity in grid)
 		Def.Sprite{
 			Name = "ClearLamp",
 			InitCommand = function(s) s:xy(-5, 3.4):zoomy(1.13):visible(false) end,
+		},
+
+		-- Title area
+		Def.ActorFrame{
+			Name = "TitleArea",
+			InitCommand = function(s) s:xy(1, 67) end,
+
+			-- Transliterated title (small, above main title)
+			Def.BitmapText{
+				Name = "TranslitTitle",
+				Font = "_futura pt medium 30px",
+				InitCommand = function(s)
+					s:y(-10):zoom(0.35):maxwidth(440)
+					s:strokecolor(color("0,0,0,0.5"))
+					s:visible(false)
+				end,
+			},
+
+			-- Main title
+			Def.BitmapText{
+				Name = "Title",
+				Font = "_wheelnames 28px",
+				InitCommand = function(s)
+					s:zoom(0.6):maxwidth(260)
+					s:strokecolor(color("0.15,0.15,0.0,0.9"))
+				end,
+			},
+		},
+
+		-- Difficulty hex background
+		Def.ActorFrame{
+			Name = "DiffArea",
+			InitCommand = function(s) s:xy(-54, -16) end,  -- adjusted: lower and right
+
+			Def.Sprite{
+				Name = "DiffHex",
+				InitCommand = function(s)
+					local m = GetModel()
+					s:Load(sharedPath .. m .. "hex.png")
+					s:zoom(0.37)
+				end,
+			},
+
+			-- Difficulty line overlay (colored by difficulty)
+			Def.Sprite{
+				Name = "DiffLine",
+				InitCommand = function(s)
+					s:Load(cardPath .. "line.png")
+					s:zoom(0.37)
+				end,
+			},
+
+			-- Difficulty number
+			Def.BitmapText{
+				Name = "DiffNum",
+				Font = "_impact 32px",
+				InitCommand = function(s)
+					s:x(-1):zoom(0.8)
+					s:diffuse(color("#FFFFFF")):strokecolor(color("#000000"))
+				end,
+			},
 		},
 
 		-- Flare badge
@@ -369,59 +514,99 @@ local function MakeSongCard(idx)
 			Name = "FlareBadge",
 			InitCommand = function(s) s:xy(-74, 38):zoom(0.4):visible(false) end,
 		},
+
+		-- Long/Marathon indicator
+		Def.Sprite{
+			Name = "LongIndicator",
+			InitCommand = function(s)
+				local m = GetModel()
+				s:Load(sharedPath .. m .. "long.png")
+				s:xy(-40, 36):zoom(0.3):visible(false)
+			end,
+		},
+
+		-- Cursor arrows (only visible when focused)
+		Def.Sprite{
+			Name = "CursorL",
+			InitCommand = function(s)
+				local m = GetModel()
+				s:Load(sharedPath .. m .. "cursor.png")
+				s:x(-114):zoom(0.85):visible(false)
+			end,
+		},
+		Def.Sprite{
+			Name = "CursorR",
+			InitCommand = function(s)
+				local m = GetModel()
+				s:Load(sharedPath .. m .. "cursor.png")
+				s:x(114):zoom(0.85):rotationy(180):visible(false)
+			end,
+		},
 	}
 	return card
 end
 
 -- Factory: Create a group header actor
 local function MakeGroupHeader(idx)
+	local wheelItemPath = ThemeDir .. "Graphics/MusicWheelItem/"
+
 	local header = Def.ActorFrame{
 		Name = "Header"..idx,
 		InitCommand = function(self)
 			self:visible(false)
 			self.poolIdx = idx
 			self.flatIdx = nil
+			self.isExpanded = false
 		end,
 
-		-- Background bar
-		Def.Quad{
+		-- Background sprite (normal state)
+		Def.Sprite{
 			Name = "HeaderBG",
 			InitCommand = function(s)
-				s:setsize(280, 40):diffuse(color("0.1,0.1,0.1,0.9"))
+				local m = GetModel()
+				s:Load(wheelItemPath .. m .. "normal.png")
+				s:y(2):zoom(0.91)
 			end,
 		},
 
-		-- Accent line
-		Def.Quad{
-			Name = "HeaderAccent",
+		-- Flash overlay (focused state)
+		Def.Sprite{
+			Name = "HeaderFlash",
 			InitCommand = function(s)
-				s:setsize(280, 3):y(-18.5)
-				if GAMESTATE:IsExtraStage() or GAMESTATE:IsExtraStage2() then
-					s:diffuse(color("0.3,0.5,0.9,1"))
-				else
-					s:diffuse(color("0.9,0.7,0.2,1"))
-				end
+				local m = GetModel()
+				s:Load(wheelItemPath .. m .. "flash.png")
+				s:y(2):zoomx(0.915):zoomy(0.76):visible(false)
+				s:diffuseramp():effectcolor1(color("1,1,1,0.2")):effectcolor2(color("1,1,1,1")):effectperiod(0.5)
 			end,
 		},
 
 		-- Group name text
 		Def.BitmapText{
 			Name = "GroupName",
-			Font = "_wheelnames 28px",
+			Font = "MusicWheelItem GroupNames",
 			InitCommand = function(s)
-				s:zoom(0.5):maxwidth(500)
-				s:diffuse(color("1,1,1,1"))
-				s:strokecolor(color("0,0,0,0.8"))
+				s:maxwidth(320)
+				s:diffuse(Color.White)
 			end,
 		},
 
-		-- Expand/collapse indicator
-		Def.BitmapText{
-			Name = "ExpandIcon",
-			Font = "Common Normal",
-			Text = ">",
+		-- Cursor arrows
+		Def.Sprite{
+			Name = "CursorL",
 			InitCommand = function(s)
-				s:x(125):zoom(0.8):diffuse(color("0.8,0.8,0.8,1"))
+				local m = GetModel()
+				s:Load(sharedPath .. m .. "cursor.png")
+				s:x(-287):zoom(0.85):visible(false)
+				s:bounce():effectmagnitude(12,0,0):effectperiod(0.8)
+			end,
+		},
+		Def.Sprite{
+			Name = "CursorR",
+			InitCommand = function(s)
+				local m = GetModel()
+				s:Load(sharedPath .. m .. "cursor.png")
+				s:x(287):zoom(0.85):rotationy(180):visible(false)
+				s:bounce():effectmagnitude(-12,0,0):effectperiod(0.8)
 			end,
 		},
 	}
@@ -450,8 +635,28 @@ local function UpdateSongCard(actor, entry, isFocused)
 		jacket:setsize(103, 103)
 	end
 
-	-- Title
-	local title = actor:GetChild("Title")
+	-- Golden League overlay
+	local leagueOverlay = actor:GetChild("LeagueOverlay")
+	if leagueOverlay then
+		local songtit = song:GetDisplayMainTitle()
+		if GoldenLeagueSong and GoldenLeagueSong[songtit] then
+			local leaguePath = ThemeDir .. "Graphics/MusicWheelItem Song NormalPart/" .. GoldenLeagueSong[songtit] .. ".png"
+			if FILEMAN:DoesFileExist(leaguePath) then
+				leagueOverlay:Load(leaguePath)
+				leagueOverlay:visible(true)
+			else
+				leagueOverlay:visible(false)
+			end
+		else
+			leagueOverlay:visible(false)
+		end
+	end
+
+	-- Title area
+	local titleArea = actor:GetChild("TitleArea")
+	local title = titleArea and titleArea:GetChild("Title")
+	local translit = titleArea and titleArea:GetChild("TranslitTitle")
+
 	if title then
 		local displayTitle = GetSongName and GetSongName(song) or song:GetDisplayMainTitle()
 		title:settext(displayTitle)
@@ -460,24 +665,48 @@ local function UpdateSongCard(actor, entry, isFocused)
 		end
 	end
 
-	-- Translit title
-	local translit = actor:GetChild("TranslitTitle")
 	if translit then
 		if GetTitleDisplayMode and GetTitleDisplayMode() == "Dual" and HasTranslitTitle and HasTranslitTitle(song) then
 			translit:settext(GetTranslitTitle(song))
 			translit:visible(true)
-			if title then title:y(71) end
+			if title then title:y(4) end
 		else
 			translit:visible(false)
-			if title then title:y(67) end
+			if title then title:y(0) end
 		end
 	end
 
-	-- Highlight
-	local highlight = actor:GetChild("Highlight")
-	local highlightLine = actor:GetChild("HighlightLine")
-	if highlight then highlight:visible(isFocused) end
-	if highlightLine then highlightLine:visible(isFocused) end
+	-- Highlights (focused state)
+	local highlights = actor:GetChild("Highlights")
+	if highlights then highlights:visible(isFocused) end
+
+	-- Cursors (focused state)
+	local cursorL = actor:GetChild("CursorL")
+	local cursorR = actor:GetChild("CursorR")
+	if cursorL then
+		cursorL:visible(isFocused)
+		if isFocused then
+			cursorL:stoptweening():bounce():effectmagnitude(12,0,0):effectperiod(1)
+		end
+	end
+	if cursorR then
+		cursorR:visible(isFocused)
+		if isFocused then
+			cursorR:stoptweening():bounce():effectmagnitude(-12,0,0):effectperiod(1)
+		end
+	end
+
+	-- "NEW" badge
+	local newBadge = actor:GetChild("NewBadge")
+	if newBadge then
+		newBadge:visible(PROFILEMAN:IsSongNew(song))
+	end
+
+	-- Long/Marathon indicator
+	local longInd = actor:GetChild("LongIndicator")
+	if longInd then
+		longInd:visible(song:IsLong() or song:IsMarathon())
+	end
 
 	-- Get current steps for difficulty display
 	local pn = GAMESTATE:GetMasterPlayerNumber()
@@ -485,24 +714,88 @@ local function UpdateSongCard(actor, entry, isFocused)
 	local steps = #entry > 1 and entry[2] or nil  -- First steps in entry
 
 	-- Difficulty display
-	local diffHex = actor:GetChild("DiffHex")
-	local diffLine = actor:GetChild("DiffLine")
-	local diffNum = actor:GetChild("DiffNum")
-	if steps and diffNum then
-		diffNum:settext(steps:GetMeter())
-		diffNum:visible(true)
+	local diffArea = actor:GetChild("DiffArea")
+	local diffLine = diffArea and diffArea:GetChild("DiffLine")
+	local diffNum = diffArea and diffArea:GetChild("DiffNum")
+	if steps then
+		if diffNum then
+			diffNum:settext(steps:GetMeter())
+			diffNum:visible(true)
+		end
 		if diffLine then
 			diffLine:diffuse(CustomDifficultyToColor(steps:GetDifficulty()))
+			diffLine:visible(true)
 		end
-	elseif diffNum then
-		diffNum:visible(false)
+		if diffArea then diffArea:visible(true) end
+	else
+		if diffArea then diffArea:visible(false) end
 	end
 
-	-- Clear lamp and flare badge (simplified - will enhance later)
+	-- Clear lamp and flare badge
 	local clearLamp = actor:GetChild("ClearLamp")
 	local flareBadge = actor:GetChild("FlareBadge")
+
+	-- Reset visibility
 	if clearLamp then clearLamp:visible(false) end
 	if flareBadge then flareBadge:visible(false) end
+
+	-- Only show for valid steps
+	if steps then
+		local lampType = nil
+		local flareGauge = nil
+
+		-- Try ChartResults first (includes Flare data)
+		if GetChartResultBySong then
+			local chartResult = GetChartResultBySong(pn, song, steps)
+			if chartResult then
+				lampType = chartResult.lamp
+				flareGauge = chartResult.flareGauge
+			end
+		end
+
+		-- Fall back to high scores if no ChartResult
+		if not lampType then
+			local profile
+			if PROFILEMAN:IsPersistentProfile(pn) then
+				profile = PROFILEMAN:GetProfile(pn)
+			else
+				profile = PROFILEMAN:GetMachineProfile()
+			end
+			if profile then
+				local scorelist = profile:GetHighScoreList(song, steps)
+				if scorelist then
+					local scores = scorelist:GetHighScores()
+					if scores and scores[1] then
+						lampType = GetLampFromHighScore(scores[1])
+					end
+				end
+			end
+		end
+
+		-- Load lamp texture
+		if clearLamp and lampType then
+			local lampTex = GetLampTexture(lampType)
+			if lampTex and FILEMAN:DoesFileExist(lampTex) then
+				clearLamp:Load(lampTex)
+				clearLamp:visible(true)
+				-- Add shimmer effect for FC lamps
+				if lampType == "MFC" or lampType == "PFC" or lampType == "GFC" or lampType == "FC" then
+					clearLamp:diffuseshift():effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,0.75")):effectperiod(0.1)
+				else
+					clearLamp:diffuseshift():effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,1")):effectperiod(1.1)
+				end
+			end
+		end
+
+		-- Load flare badge
+		if flareBadge and flareGauge then
+			local flareTex = GetFlareBadgeTexture(flareGauge)
+			if flareTex then
+				flareBadge:Load(flareTex)
+				flareBadge:visible(true)
+			end
+		end
+	end
 end
 
 -- Update a group header with data
@@ -513,33 +806,59 @@ local function UpdateGroupHeader(actor, groupName, isExpanded, isFocused)
 	end
 
 	actor:visible(true)
+	actor.isExpanded = isExpanded
 
-	local nameText = actor:GetChild("GroupName")
-	if nameText then
-		nameText:settext(groupName)
-	end
+	local wheelItemPath = ThemeDir .. "Graphics/MusicWheelItem/"
+	local m = GetModel()
 
-	local expandIcon = actor:GetChild("ExpandIcon")
-	if expandIcon then
-		expandIcon:settext(isExpanded and "v" or ">")
-	end
-
+	-- Background sprite - switch based on expanded state
 	local bg = actor:GetChild("HeaderBG")
 	if bg then
-		if isFocused then
-			bg:diffuse(color("0.2,0.2,0.2,0.95"))
+		local bgTex = isExpanded and (m .. "selected.png") or (m .. "normal.png")
+		bg:Load(wheelItemPath .. bgTex)
+	end
+
+	-- Flash overlay - visible when focused
+	local flash = actor:GetChild("HeaderFlash")
+	if flash then
+		flash:visible(isFocused)
+	end
+
+	-- Group name text
+	local nameText = actor:GetChild("GroupName")
+	if nameText then
+		-- Format group name (strip leading numbers for Group sort, etc.)
+		local displayName = groupName
+		if SongAttributes and SongAttributes.GetGroupName then
+			displayName = SongAttributes.GetGroupName(groupName)
+		end
+		if GAMESTATE:GetSortOrder() == "SortOrder_Group" then
+			displayName = string.gsub(displayName, "^%d%d? ?%- ?", "")
+		elseif GAMESTATE:GetSortOrder() == "SortOrder_TopGrades" then
+			displayName = string.gsub(displayName, "AAAA", "AAA+")
+		end
+		nameText:settext(displayName)
+		-- Text color: black on selected (expanded), white otherwise
+		if isExpanded then
+			nameText:diffuse(Color.Black)
 		else
-			bg:diffuse(color("0.1,0.1,0.1,0.9"))
+			nameText:diffuse(Color.White)
 		end
 	end
+
+	-- Cursor arrows - visible when focused
+	local cursorL = actor:GetChild("CursorL")
+	local cursorR = actor:GetChild("CursorR")
+	if cursorL then cursorL:visible(isFocused) end
+	if cursorR then cursorR:visible(isFocused) end
 end
 
 -- ============================================================================
 -- DIFFICULTY PICKER (Stage 6)
 -- ============================================================================
 
-local DIFF_ROW_H = 60
-local DIFF_W = 400
+local DIFF_ROW_H = 50
+local DIFF_W = 340
 local MAX_DIFFS = 6
 
 -- Difficulty colors matching DDR A3
@@ -566,7 +885,6 @@ end
 local function OpenDiffPicker(song, stepsArray)
 	DiffSong = song
 	DiffSteps = stepsArray
-	-- Initialize each player's cursor to their preferred difficulty
 	for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
 		DiffPickIdx[pn] = 1
 		local pref = GAMESTATE:GetPreferredDifficulty(pn)
@@ -613,19 +931,24 @@ local function ConfirmDifficulty()
 	SCREENMAN:GetTopScreen():StartTransitioningScreen("SM_GoToNextScreen")
 end
 
--- Called when Start is pressed on a song
+local TwoPartConfirmed = {
+	[PLAYER_1] = false,
+	[PLAYER_2] = false,
+}
+local TwoPartActive = false
+
 local function ConfirmSong()
 	if Accepted or not IsSong(Cursor) then return end
 	local entry = FlatList[Cursor]
 	local song = entry[1]
-	-- Gather available Steps
+
 	local stepsArray = {}
 	for i = 2, #entry do
 		stepsArray[#stepsArray + 1] = entry[i]
 	end
 	if #stepsArray == 0 then return end
+
 	if #stepsArray == 1 then
-		-- Single difficulty - skip picker
 		SaveCursorState()
 		StopPreview()
 		GAMESTATE:SetCurrentSong(song)
@@ -637,27 +960,50 @@ local function ConfirmSong()
 		SOUND:PlayOnce(THEME:GetPathS("Common", "start"))
 		SCREENMAN:GetTopScreen():StartTransitioningScreen("SM_GoToNextScreen")
 	else
-		-- Multiple difficulties - open picker
-		OpenDiffPicker(song, stepsArray)
+		TwoPartActive = true
+		TwoPartConfirmed[PLAYER_1] = false
+		TwoPartConfirmed[PLAYER_2] = false
+		MESSAGEMAN:Broadcast("StartSelectingSteps")
 	end
 end
 
--- Factory: Create difficulty picker for a player
+local function OnTwoPartConfirm(pn)
+	if not TwoPartActive then return end
+	TwoPartConfirmed[pn] = true
+
+	local allConfirmed = true
+	for _, p in ipairs(GAMESTATE:GetEnabledPlayers()) do
+		if not TwoPartConfirmed[p] then
+			allConfirmed = false
+			break
+		end
+	end
+
+	if allConfirmed and not Accepted then
+		SaveCursorState()
+		StopPreview()
+		GAMESTATE:SetCurrentPlayMode("PlayMode_Regular")
+		Accepted = true
+		TwoPartActive = false
+	end
+end
+
+local function OnSongUnchosen()
+	TwoPartActive = false
+	TwoPartConfirmed[PLAYER_1] = false
+	TwoPartConfirmed[PLAYER_2] = false
+end
+
+-- Factory: Create difficulty picker for a player (fallback, TwoPartDiff is primary)
 local function MakeDiffPicker(pn)
 	local isVersus = GAMESTATE:GetNumPlayersEnabled() > 1
 	local boxX
 	if isVersus then
-		boxX = (pn == PLAYER_1) and (SCREEN_CENTER_X - DIFF_W/2 - 20)
-		                           or (SCREEN_CENTER_X + DIFF_W/2 + 20)
+		boxX = (pn == PLAYER_1) and (SCREEN_CENTER_X - DIFF_W/2 - 40)
+		                           or (SCREEN_CENTER_X + DIFF_W/2 + 40)
 	else
 		boxX = SCREEN_CENTER_X
 	end
-
-	local pColors = {
-		[PLAYER_1] = { border = color("#334488"), highlight = color("#334488aa") },
-		[PLAYER_2] = { border = color("#883344"), highlight = color("#883344aa") },
-	}
-	local pc = pColors[pn] or pColors[PLAYER_1]
 
 	local m = Def.ActorFrame{
 		Name = "DiffPicker_"..ToEnumShortString(pn),
@@ -667,36 +1013,40 @@ local function MakeDiffPicker(pn)
 		end,
 		RefreshDiffCommand = function(self)
 			local n = #DiffSteps
-			local totalH = n * DIFF_ROW_H + 80
+			local totalH = n * DIFF_ROW_H + 70
 			local topY = SCREEN_CENTER_Y - totalH/2
 
-			-- Size background
-			local bg = self:GetChild("DiffBG")
-			local border = self:GetChild("DiffBorder")
-			if bg then bg:y(SCREEN_CENTER_Y):zoomto(DIFF_W, totalH) end
-			if border then border:y(SCREEN_CENTER_Y):zoomto(DIFF_W + 4, totalH + 4) end
+			local panelTop = self:GetChild("PanelTop")
+			local panelMid = self:GetChild("PanelMid")
+			local panelBot = self:GetChild("PanelBot")
+			if panelTop then panelTop:y(topY) end
+			if panelMid then panelMid:y(topY + 20):zoomto(DIFF_W * 0.78, totalH - 20) end
+			if panelBot then panelBot:y(topY + totalH) end
 
-			-- Title
 			local title = self:GetChild("DiffTitle")
 			if title and DiffSong then
-				title:y(topY + 25):settext(DiffSong:GetDisplayMainTitle())
+				title:y(topY + 28):settext(DiffSong:GetDisplayMainTitle())
 			end
 
 			local selIdx = DiffPickIdx[pn] or 1
 
-			-- Rows
 			for i = 1, MAX_DIFFS do
 				local rowBG = self:GetChild("DiffRowBG"..i)
 				local label = self:GetChild("DiffLabel"..i)
 				local meter = self:GetChild("DiffMeter"..i)
+				local arrow = self:GetChild("DiffArrow"..i)
 				if i <= n then
 					local st = DiffSteps[i]
 					local dc = GetDiffColor(st)
-					local rowY = topY + 60 + (i - 1) * DIFF_ROW_H + DIFF_ROW_H/2
+					local rowY = topY + 52 + (i - 1) * DIFF_ROW_H + DIFF_ROW_H/2
 					local sel = (i == selIdx)
 					if rowBG then
 						rowBG:visible(true):y(rowY)
-						rowBG:diffuse(sel and pc.highlight or color("#00000000"))
+						rowBG:diffuse(sel and color("#FFD700") or color("#00000000"))
+						rowBG:diffusealpha(sel and 0.3 or 0)
+					end
+					if arrow then
+						arrow:visible(sel):y(rowY)
 					end
 					if label then
 						label:visible(true):y(rowY)
@@ -710,65 +1060,78 @@ local function MakeDiffPicker(pn)
 					end
 				else
 					if rowBG then rowBG:visible(false) end
+					if arrow then arrow:visible(false) end
 					if label then label:visible(false) end
 					if meter then meter:visible(false) end
 				end
 			end
 		end,
 
-		-- Border
-		Def.Quad{
-			Name = "DiffBorder",
+		-- Panel graphics
+		Def.Sprite{
+			Name = "PanelTop",
 			InitCommand = function(self)
-				self:x(boxX):zoomto(DIFF_W + 4, 200)
-					:diffuse(pc.border)
+				self:Load(sharedPath .. Model() .. "infotop.png")
+				self:x(boxX):valign(0):zoom(0.7)
 			end,
 		},
-		-- Background
-		Def.Quad{
-			Name = "DiffBG",
+		Def.Sprite{
+			Name = "PanelMid",
 			InitCommand = function(self)
-				self:x(boxX):zoomto(DIFF_W, 200)
-					:diffuse(color("#0a0a18")):diffusealpha(0.95)
+				self:Load(sharedPath .. "infomiddle.png")
+				self:x(boxX):valign(0)
+			end,
+		},
+		Def.Sprite{
+			Name = "PanelBot",
+			InitCommand = function(self)
+				self:Load(sharedPath .. Model() .. "infobottom.png")
+				self:x(boxX):valign(1):zoom(0.7)
 			end,
 		},
 		-- Title
 		Def.BitmapText{
-			Font = "_wheelnames 28px",
+			Font = "_avenirnext lt pro bold Bold 20px",
 			Name = "DiffTitle",
 			InitCommand = function(self)
-				self:x(boxX):zoom(0.7)
-					:diffuse(Color.White)
-					:maxwidth(DIFF_W - 20)
-					:strokecolor(color("0,0,0,0.8"))
+				self:x(boxX):zoom(0.6)
+				self:diffuse(Color.White)
+				self:maxwidth(DIFF_W - 40)
+				self:strokecolor(color("0,0,0,0.8"))
 			end,
 		},
 	}
 
-	-- Difficulty rows
 	for i = 1, MAX_DIFFS do
 		m[#m+1] = Def.Quad{
 			Name = "DiffRowBG"..i,
 			InitCommand = function(self)
-				self:x(boxX):zoomto(DIFF_W - 10, DIFF_ROW_H - 6):visible(false)
+				self:x(boxX):zoomto(DIFF_W * 0.7, DIFF_ROW_H - 6):visible(false)
+			end,
+		}
+		m[#m+1] = Def.Sprite{
+			Name = "DiffArrow"..i,
+			InitCommand = function(self)
+				self:Load(sharedPath .. Model() .. "cursor.png")
+				self:x(boxX - DIFF_W/2 + 30):zoom(0.25):visible(false)
 			end,
 		}
 		m[#m+1] = Def.BitmapText{
-			Font = "_wheelnames 28px",
+			Font = "_avenirnext lt pro bold Bold 20px",
 			Name = "DiffLabel"..i,
 			InitCommand = function(self)
-				self:x(boxX - DIFF_W/2 + 60):zoom(0.5)
-					:visible(false):halign(0)
-					:strokecolor(color("0,0,0,0.8"))
+				self:x(boxX - DIFF_W/2 + 55):zoom(0.5)
+				self:visible(false):halign(0)
+				self:strokecolor(color("0,0,0,0.8"))
 			end,
 		}
 		m[#m+1] = Def.BitmapText{
 			Font = "_impact 32px",
 			Name = "DiffMeter"..i,
 			InitCommand = function(self)
-				self:x(boxX + DIFF_W/2 - 40):zoom(0.8)
-					:visible(false):halign(1)
-					:strokecolor(color("0,0,0,0.8"))
+				self:x(boxX + DIFF_W/2 - 35):zoom(0.7)
+				self:visible(false):halign(1)
+				self:strokecolor(color("0,0,0,0.8"))
 			end,
 		}
 	end
@@ -780,9 +1143,9 @@ end
 -- SIDE MENU (Stage 7)
 -- ============================================================================
 
-local MENU_W = 380
-local MENU_ROW_H = 36
-local MENU_PAD = 12
+local MENU_W = 320
+local MENU_ROW_H = 32
+local MENU_PAD = 8
 
 -- Option definitions
 local SpeedModes = {
@@ -990,12 +1353,11 @@ end
 
 -- Factory: Create side menu for a player
 local function MakeMenu(pn)
-	local totalH = MENU_PAD + 30 + NUM_MENU_ROWS * MENU_ROW_H + MENU_PAD
+	local totalH = MENU_PAD + 36 + NUM_MENU_ROWS * MENU_ROW_H + MENU_PAD
 	local topY = SCREEN_CENTER_Y - totalH/2
 	local centerY = topY + totalH/2
-	local menuX = (pn == PLAYER_1) and (MENU_W/2 + 20) or (SCREEN_WIDTH - MENU_W/2 - 20)
-
-	local borderColor = (pn == PLAYER_1) and color("#334488") or color("#883344")
+	-- Position further from center (was 20, now 60)
+	local menuX = (pn == PLAYER_1) and (MENU_W/2 + 60) or (SCREEN_WIDTH - MENU_W/2 - 60)
 
 	local m = Def.ActorFrame{
 		Name = "SideMenu_"..ToEnumShortString(pn),
@@ -1011,89 +1373,110 @@ local function MakeMenu(pn)
 				local rowBG = self:GetChild("RowBG"..i)
 				local label = self:GetChild("Label"..i)
 				local value = self:GetChild("Value"..i)
+				local arrow = self:GetChild("Arrow"..i)
 				if rowBG then
-					rowBG:diffuse(i == MenuRow[pn] and color("#333366") or color("#00000000"))
+					local isSel = (i == MenuRow[pn])
+					rowBG:diffuse(isSel and color("#FFD700") or color("#00000000"))
+					rowBG:diffusealpha(isSel and 0.3 or 0)
 				end
 				if label then
 					label:settext(row and row.name or MENU_ROW_NAMES[i])
-					label:diffuse(i == MenuRow[pn] and Color.White or color("#888888"))
+					label:diffuse(i == MenuRow[pn] and color("#FFD700") or color("#CCCCCC"))
 				end
 				if value then
 					local ch = row and row.choices[row.selected]
 					value:settext(ch and ch.label or "")
-					value:diffuse(i == MenuRow[pn] and Color.White or color("#aaaaaa"))
+					value:diffuse(i == MenuRow[pn] and Color.White or color("#AAAAAA"))
+				end
+				if arrow then
+					arrow:visible(i == MenuRow[pn])
 				end
 			end
 		end,
 
-		-- Border
-		Def.Quad{
+		-- Panel top
+		Def.Sprite{
 			InitCommand = function(self)
-				self:xy(menuX, centerY)
-					:zoomto(MENU_W + 4, totalH + 4)
-					:diffuse(borderColor)
+				self:Load(sharedPath .. Model() .. "infotop.png")
+				self:xy(menuX, topY):valign(0):zoom(0.75)
 			end,
 		},
-		-- Background
-		Def.Quad{
+		-- Panel middle (stretched)
+		Def.Sprite{
 			InitCommand = function(self)
-				self:xy(menuX, centerY)
-					:zoomto(MENU_W, totalH)
-					:diffuse(color("#0a0a18"))
-					:diffusealpha(0.95)
+				self:Load(sharedPath .. "infomiddle.png")
+				self:xy(menuX, topY + 20):valign(0)
+				self:zoomto(MENU_W * 0.78, totalH - 20)
+			end,
+		},
+		-- Panel bottom
+		Def.Sprite{
+			InitCommand = function(self)
+				self:Load(sharedPath .. Model() .. "infobottom.png")
+				self:xy(menuX, topY + totalH):valign(1):zoom(0.75)
+			end,
+		},
+		-- Player indicator
+		Def.Sprite{
+			InitCommand = function(self)
+				self:Load(sharedPath .. Model() .. "player.png")
+				self:xy(menuX, topY + 18):zoom(0.6)
 			end,
 		},
 		-- Title
 		Def.BitmapText{
-			Font = "_wheelnames 28px",
+			Font = "_avenirnext lt pro bold Bold 20px",
 			Text = "OPTIONS",
 			InitCommand = function(self)
-				self:xy(menuX, topY + MENU_PAD + 12)
-					:zoom(0.6)
-					:diffuse(Color.White)
-					:strokecolor(color("0,0,0,0.8"))
-			end,
-		},
-		-- Divider
-		Def.Quad{
-			InitCommand = function(self)
-				self:xy(menuX, topY + MENU_PAD + 26)
-					:zoomto(MENU_W - 20, 1)
-					:diffuse(color("#444466"))
+				self:xy(menuX, topY + MENU_PAD + 28)
+				self:zoom(0.7):diffuse(Color.White)
+				self:strokecolor(color("0,0,0,0.8"))
 			end,
 		},
 	}
 
 	-- Option rows
 	for i = 1, NUM_MENU_ROWS do
-		local rowY = topY + MENU_PAD + 30 + (i - 1) * MENU_ROW_H + MENU_ROW_H/2
+		local rowY = topY + MENU_PAD + 44 + (i - 1) * MENU_ROW_H + MENU_ROW_H/2
 
+		-- Selection highlight
 		m[#m+1] = Def.Quad{
 			Name = "RowBG"..i,
 			InitCommand = function(self)
 				self:xy(menuX, rowY)
-					:zoomto(MENU_W - 8, MENU_ROW_H - 4)
-					:diffuse(color("#00000000"))
+				self:zoomto(MENU_W * 0.72, MENU_ROW_H - 2)
+				self:diffuse(color("#00000000"))
 			end,
 		}
+		-- Selection arrow (cursor indicator)
+		m[#m+1] = Def.Sprite{
+			Name = "Arrow"..i,
+			InitCommand = function(self)
+				self:Load(sharedPath .. Model() .. "cursor.png")
+				self:xy(menuX - MENU_W/2 + 30, rowY)
+				self:zoom(0.3):visible(false)
+			end,
+		}
+		-- Row label
 		m[#m+1] = Def.BitmapText{
-			Font = "_wheelnames 28px",
+			Font = "_avenirnext lt pro bold Bold 20px",
 			Name = "Label"..i,
 			InitCommand = function(self)
-				self:xy(menuX - MENU_W/2 + 20, rowY)
-					:zoom(0.45):halign(0)
-					:diffuse(color("#888888"))
-					:strokecolor(color("0,0,0,0.8"))
+				self:xy(menuX - MENU_W/2 + 50, rowY)
+				self:zoom(0.5):halign(0)
+				self:diffuse(color("#CCCCCC"))
+				self:strokecolor(color("0,0,0,0.6"))
 			end,
 		}
+		-- Row value
 		m[#m+1] = Def.BitmapText{
-			Font = "_wheelnames 28px",
+			Font = "_avenirnext lt pro bold Bold 20px",
 			Name = "Value"..i,
 			InitCommand = function(self)
-				self:xy(menuX + MENU_W/2 - 20, rowY)
-					:zoom(0.45):halign(1)
-					:diffuse(color("#aaaaaa"))
-					:strokecolor(color("0,0,0,0.8"))
+				self:xy(menuX + MENU_W/2 - 30, rowY)
+				self:zoom(0.5):halign(1)
+				self:diffuse(color("#AAAAAA"))
+				self:strokecolor(color("0,0,0,0.6"))
 			end,
 		}
 	end
@@ -1407,59 +1790,143 @@ local function MakePreviewActor()
 end
 
 -- ============================================================================
--- LAYOUT & SCROLL (Stage 4)
+-- LAYOUT & SCROLL (Stage 4) - Ported from GALAXY
 -- ============================================================================
 
--- Layout constants
-local ROW_HEIGHT = 120        -- Vertical spacing between rows
-local CARD_SCALE_FOCUS = 1.0  -- Scale for focused card
-local CARD_SCALE_NORMAL = 0.85 -- Scale for non-focused cards
-local VISIBLE_ROWS = 5        -- Number of visible rows (2 above, 1 center, 2 below)
-local CENTER_Y = 0            -- Y position of center row (relative to PoolRoot)
+-- Layout constants (in pool coordinates, before 0.4 zoom)
+local CARD_H = 285            -- Song card height (for center-to-center calc)
+local HEADER_H = 66           -- Header height
+local ROW_GAP = 18            -- Gap between rows
+local CARD_SCALE_FOCUS = 2.0  -- Focused song card zoom
+local CARD_SCALE_NORMAL = 1.7 -- Normal song card zoom
+local HEADER_SCALE_FOCUS = 2.2  -- Focused header zoom
+local HEADER_SCALE_NORMAL = 1.8 -- Normal header zoom
+local CENTER_Y = 0            -- Y position of cursor item (relative to PoolRoot)
+local COL_WIDTH = 340         -- X spacing between columns
+local X_STAGGER_PER_Y = 0.27  -- X shift per Y unit (diagonal stagger)
+
+-- How far above/below center we render (in pool coordinates)
+-- This determines how many rows are visible
+local RENDER_MARGIN = 1400    -- ~7 song rows each direction (7 * ~200 = 1400)
 
 -- Scroll state
-local ScrollOffset = 0        -- Current visual scroll offset (fractional rows)
-local TargetRow = 0           -- Target row (derived from Cursor)
-local ScrollVelocity = 0      -- For cubic Hermite continuity
+local VisualOffset = 0        -- Current pixel offset during animation
+local ScrollVelocity = 0      -- For animation continuity
+
+-- Center-to-center distance between two vertically adjacent items
+-- Based on item types (group=header, song=card)
+local function CenterAdvance(typeA, typeB)
+	local hA = (typeA == "group") and HEADER_H or CARD_H
+	local hB = (typeB == "group") and HEADER_H or CARD_H
+	return hA / 2 + ROW_GAP + hB / 2
+end
+
+-- Get the column (1, 2, 3) for a song by counting back to nearest group header
+-- This works with wrapped indices for proper looping
+local function GetSongColLocal(idx)
+	local count = 0
+	local i = idx
+	local n = #FlatList
+	while i >= 1 and IsSong(Wrap(i)) do
+		count = count + 1
+		i = i - 1
+		if count > n then break end  -- safety: avoid infinite loop
+	end
+	return ((count - 1) % COLS) + 1
+end
+
+-- Compute visible items by walking forward/backward from cursor
+-- Returns array of { flatIdx, y, type, col } entries
+-- y is relative to cursor (cursor is at y=0)
+local function ComputeVisibleItems(renderMargin)
+	renderMargin = renderMargin or RENDER_MARGIN
+	local n = #FlatList
+	if n == 0 then return {} end
+
+	local result = {}
+
+	-- Find the start of cursor's row (for songs, walk back to col 1)
+	local rowStart = Cursor
+	if IsSong(Cursor) then
+		while true do
+			local prevWi = Wrap(rowStart - 1)
+			if not IsSong(prevWi) then break end
+			if GetSongColLocal(prevWi) >= GetSongColLocal(Wrap(rowStart)) then break end
+			if rowStart - 1 == Cursor - n then break end
+			rowStart = rowStart - 1
+		end
+	end
+
+	-- Walk FORWARD from row start
+	local y = 0
+	local visited = 0
+	local idx = rowStart
+	while y < renderMargin and visited < n do
+		local wi = Wrap(idx)
+		if IsGroup(wi) then
+			result[#result+1] = { flatIdx = wi, y = y, type = "group", col = 0 }
+			local nextType = IsSong(Wrap(idx + 1)) and "song" or "group"
+			y = y + CenterAdvance("group", nextType)
+		else
+			local col = GetSongColLocal(wi)
+			result[#result+1] = { flatIdx = wi, y = y, type = "song", col = col }
+			local nextWi = Wrap(idx + 1)
+			if col == COLS or not IsSong(nextWi) then
+				local nextType = IsSong(nextWi) and "song" or "group"
+				y = y + CenterAdvance("song", nextType)
+			end
+		end
+		visited = visited + 1
+		idx = idx + 1
+	end
+
+	-- Walk BACKWARD from row start
+	local lastBelowType = IsGroup(Wrap(rowStart)) and "group" or "song"
+	y = 0
+	visited = 0
+	idx = rowStart - 1
+	local pendingRow = {}
+
+	local function FlushPending()
+		if #pendingRow == 0 then return end
+		y = y - CenterAdvance("song", lastBelowType)
+		for _, p in ipairs(pendingRow) do
+			result[#result+1] = { flatIdx = p.fi, y = y, type = "song", col = p.col }
+		end
+		pendingRow = {}
+		lastBelowType = "song"
+	end
+
+	while (-y) < renderMargin and visited < n do
+		local wi = Wrap(idx)
+		if IsGroup(wi) then
+			FlushPending()
+			y = y - CenterAdvance("group", lastBelowType)
+			result[#result+1] = { flatIdx = wi, y = y, type = "group", col = 0 }
+			lastBelowType = "group"
+		else
+			local col = GetSongColLocal(wi)
+			pendingRow[#pendingRow+1] = { fi = wi, col = col }
+			if col == 1 then
+				FlushPending()
+			end
+		end
+		visited = visited + 1
+		idx = idx - 1
+	end
+	FlushPending()
+
+	return result
+end
+
+-- Stub for compatibility (no longer needed with dynamic layout)
+RebuildLayoutCache = function() end
 
 -- Cubic Hermite interpolation for smooth scrolling
 local function CubicHermite(t, p0, p1, m0, m1)
 	local t2 = t * t
 	local t3 = t2 * t
 	return (2*t3 - 3*t2 + 1) * p0 + (t3 - 2*t2 + t) * m0 + (-2*t3 + 3*t2) * p1 + (t3 - t2) * m1
-end
-
--- Get the row index for a flat list index
-local function GetRow(flatIdx)
-	return math.floor((flatIdx - 1) / COLS)
-end
-
--- Get the column for a flat list index (0, 1, or 2)
-local function GetCol(flatIdx)
-	return (flatIdx - 1) % COLS
-end
-
--- Compute which items should be visible based on current scroll position
-local function ComputeVisibleItems()
-	local visible = {}
-	local centerRow = GetRow(Cursor)
-	local startRow = centerRow - math.floor(VISIBLE_ROWS / 2) - 1
-	local endRow = centerRow + math.ceil(VISIBLE_ROWS / 2) + 1
-
-	for row = startRow, endRow do
-		for col = 0, COLS - 1 do
-			local flatIdx = row * COLS + col + 1
-			if flatIdx >= 1 and flatIdx <= #FlatList then
-				visible[#visible + 1] = {
-					flatIdx = flatIdx,
-					row = row,
-					col = col,
-				}
-			end
-		end
-	end
-
-	return visible
 end
 
 -- Hide all pool actors
@@ -1482,58 +1949,67 @@ local function Refresh()
 
 	HideAllPools()
 
-	local visible = ComputeVisibleItems()
-	local cursorRow = GetRow(Cursor)
-	local cursorCol = GetCol(Cursor)
+	-- ComputeVisibleItems returns { flatIdx, y, type, col } where y is relative to cursor
+	local items = ComputeVisibleItems(RENDER_MARGIN + math.abs(VisualOffset))
 
 	local cardIdx = 1
 	local headerIdx = 1
 
-	for _, v in ipairs(visible) do
-		local flatIdx = v.flatIdx
-		local row = v.row
-		local col = v.col
-		local item = FlatList[flatIdx]
+	for _, item in ipairs(items) do
+		local flatIdx = item.flatIdx
+		local y = item.y + VisualOffset  -- Apply scroll animation offset
+		local col = item.col
+		local itemType = item.type
+		local entry = FlatList[flatIdx]
 
-		-- Calculate position
-		local rowOffset = row - cursorRow - ScrollOffset
-		local x = STAGGER[col].x
-		local y = CENTER_Y + rowOffset * ROW_HEIGHT + STAGGER[col].y
+		-- Screen Y = center + relative Y
+		local screenY = CENTER_Y + y
+
+		-- Horizontal stagger based on Y distance
+		local xStagger = y * X_STAGGER_PER_Y
 
 		-- Determine if this item is focused
 		local isFocused = (flatIdx == Cursor)
 
-		-- Scale based on focus
-		local scale = isFocused and CARD_SCALE_FOCUS or CARD_SCALE_NORMAL
-
 		-- Fade items near edges
 		local alpha = 1.0
-		local edgeDist = math.abs(rowOffset)
-		if edgeDist > 1.5 then
-			alpha = math.max(0, 1 - (edgeDist - 1.5) / 1.0)
+		local yDist = math.abs(y)
+		local fadeStart = RENDER_MARGIN - 300
+		if yDist > fadeStart then
+			alpha = math.max(0, 1 - (yDist - fadeStart) / 300)
 		end
 
-		if IsGroup(flatIdx) then
-			-- Use a header from the pool
+		-- Z-depth for proper layering (focused items on top)
+		local zDepth = 1 - yDist / RENDER_MARGIN
+
+		if itemType == "group" then
+			-- Header: centered with stagger
+			local x = 0 + xStagger
+			local headerScale = isFocused and HEADER_SCALE_FOCUS or HEADER_SCALE_NORMAL
 			if headerIdx <= POOL_HEADERS then
 				local header = HeaderPool[headerIdx]
 				if header then
-					header:xy(x, y)
-					header:zoom(scale)
+					header:xy(x, screenY)
+					header:z(zDepth)
+					header:zoom(headerScale)
 					header:diffusealpha(alpha)
-					UpdateGroupHeader(header, item, item == OpenGroup, isFocused)
+					UpdateGroupHeader(header, entry, entry == OpenGroup, isFocused)
 					headerIdx = headerIdx + 1
 				end
 			end
 		else
-			-- Use a card from the pool
+			-- Song card: 3 columns (col is 1, 2, or 3)
+			-- Convert to offset: col 1 = -1, col 2 = 0, col 3 = +1
+			local x = (col - 2) * COL_WIDTH + xStagger
+			local cardScale = isFocused and CARD_SCALE_FOCUS or CARD_SCALE_NORMAL
 			if cardIdx <= POOL_CARDS then
 				local card = CardPool[cardIdx]
 				if card then
-					card:xy(x, y)
-					card:zoom(scale)
+					card:xy(x, screenY)
+					card:z(zDepth)
+					card:zoom(cardScale)
 					card:diffusealpha(alpha)
-					UpdateSongCard(card, item, isFocused)
+					UpdateSongCard(card, entry, isFocused)
 					CardAssign[cardIdx] = flatIdx
 					CardByFlat[flatIdx] = cardIdx
 					cardIdx = cardIdx + 1
@@ -1543,63 +2019,205 @@ local function Refresh()
 	end
 end
 
--- Scroll animation state
-local AnimElapsed = 0
-local AnimStartOffset = 0
-local AnimTargetOffset = 0
-local AnimStartVel = 0
-local IsAnimating = false
+-- ===== SCROLL ANIMATION (ported from GALAXY) =====
+-- Cubic Hermite: f(s) from startOffset to 0, f'(1)=0.
+-- f(s) = As³ + Bs² + Cs + D,  s ∈ [0, 1]
 
--- Start a scroll animation
-local function StartScrollAnimation(targetOffset)
-	AnimElapsed = 0
-	AnimStartOffset = ScrollOffset
-	AnimTargetOffset = targetOffset
-	AnimStartVel = ScrollVelocity
-	IsAnimating = true
+local AnimActive = false
+local AnimTime = 0
+local AnimA, AnimB, AnimC, AnimD = 0, 0, 0, 0
+
+local function EvalCubic(s)
+	return AnimA*s*s*s + AnimB*s*s + AnimC*s + AnimD
 end
 
--- Update scroll animation (called each frame via SetUpdateFunction)
+local function GetCurrentAnimVelNorm()
+	if not AnimActive then return 0 end
+	local s = math.min(AnimTime / ANIM_DUR, 1)
+	return 3*AnimA*s*s + 2*AnimB*s + AnimC
+end
+
+local function StartScrollAnim(startOffset, velNorm)
+	local P = startOffset
+	local V = velNorm
+	AnimA = V + 2*P
+	AnimB = -2*V - 3*P
+	AnimC = V
+	AnimD = P
+	AnimTime = 0
+	AnimActive = true
+	VisualOffset = P
+end
+
+local function ResetAnim()
+	VisualOffset = 0
+	AnimActive = false
+end
+
+-- Update scroll animation (called each frame)
 local function UpdateScroll(self)
-	-- Accumulate time from frame delta
 	local dt = self:GetEffectDelta()
 	AccumulatedTime = AccumulatedTime + dt
 
-	if not IsAnimating then return end
+	if not AnimActive then return end
 
-	AnimElapsed = AnimElapsed + dt
-	local t = math.min(1, AnimElapsed / ANIM_DUR)
+	AnimTime = AnimTime + dt
+	local s = AnimTime / ANIM_DUR
 
-	if t >= 1 then
-		-- Animation complete
-		ScrollOffset = AnimTargetOffset
-		ScrollVelocity = 0
-		IsAnimating = false
+	if s >= 1 then
+		VisualOffset = 0
+		AnimActive = false
 	else
-		-- Cubic Hermite interpolation
-		local targetVel = 0
-		ScrollOffset = CubicHermite(t, AnimStartOffset, AnimTargetOffset, AnimStartVel * ANIM_DUR, targetVel * ANIM_DUR)
-		-- Estimate velocity for continuity
-		ScrollVelocity = (AnimTargetOffset - AnimStartOffset) * (1 - t) / ANIM_DUR
+		VisualOffset = EvalCubic(s)
 	end
 
 	Refresh()
 end
 
 -- ============================================================================
--- NAVIGATION (Stage 4/5)
+-- NAVIGATION (Stage 4/5) - Ported from GALAXY
 -- ============================================================================
 
-local function MoveCursor(delta)
-	local oldRow = GetRow(Cursor)
-	Cursor = Wrap(Cursor + delta)
-	local newRow = GetRow(Cursor)
+-- Calculate the scroll offset needed when moving from one cursor to another
+local function CalcScrollOffset(oldCursor, newCursor)
+	if oldCursor == newCursor then return 0 end
 
-	-- If row changed, animate the scroll
-	if newRow ~= oldRow then
-		-- Set offset so view appears to stay in place, then animate to 0
-		ScrollOffset = ScrollOffset + (oldRow - newRow)
-		StartScrollAnimation(0)
+	local n = #FlatList
+	local fwdDist, bwdDist = 0, 0
+
+	-- Walk forward from old to new
+	local idx = oldCursor
+	local y = 0
+	local lastType = IsGroup(oldCursor) and "group" or "song"
+	while idx ~= newCursor do
+		local nextIdx = Wrap(idx + 1)
+		local nextType = IsGroup(nextIdx) and "group" or "song"
+		-- Only advance Y when we finish a row
+		if lastType == "group" or (IsSong(idx) and (GetSongColLocal(idx) == COLS or not IsSong(nextIdx))) then
+			y = y + CenterAdvance(lastType, nextType)
+		end
+		if IsSong(nextIdx) then lastType = "song" else lastType = "group" end
+		idx = nextIdx
+		fwdDist = y
+		if idx == oldCursor then break end  -- wrapped around
+	end
+
+	-- Walk backward from old to new
+	idx = oldCursor
+	y = 0
+	lastType = IsGroup(oldCursor) and "group" or "song"
+	while idx ~= newCursor do
+		local prevIdx = Wrap(idx - 1)
+		local prevType = IsGroup(prevIdx) and "group" or "song"
+		if lastType == "group" or (IsSong(idx) and GetSongColLocal(idx) == 1) then
+			y = y + CenterAdvance(prevType, lastType)
+		end
+		if IsSong(prevIdx) then lastType = "song" else lastType = "group" end
+		idx = prevIdx
+		bwdDist = y
+		if idx == oldCursor then break end
+	end
+
+	-- Return the shorter distance (positive for forward/down, negative for backward/up)
+	if fwdDist <= bwdDist then
+		return fwdDist   -- moved forward/down, content scrolls up
+	else
+		return -bwdDist  -- moved backward/up, content scrolls down
+	end
+end
+
+-- Move cursor by a number of items (for left/right within a row)
+local function MoveCursorByItems(delta)
+	local oldCursor = Cursor
+	Cursor = Wrap(Cursor + delta)
+
+	-- Calculate and animate scroll offset
+	local offset = CalcScrollOffset(oldCursor, Cursor)
+	if offset ~= 0 then
+		local vel = GetCurrentAnimVelNorm()
+		StartScrollAnim(offset, vel)
+	end
+
+	Refresh()
+	MESSAGEMAN:Broadcast("CursorChanged")
+end
+
+-- Move cursor to a different row (for up/down navigation)
+local function MoveCursorByRows(rowDelta)
+	local oldCursor = Cursor
+	local currentCol = IsSong(Cursor) and GetSongColLocal(Cursor) or 0
+	local isHeader = IsGroup(Cursor)
+	local n = #FlatList
+
+	-- Find the next row in the given direction
+	local searchDir = rowDelta > 0 and 1 or -1
+	local idx = Cursor
+	local foundNewRow = false
+
+	-- Skip to the next row
+	local visited = 0
+	while visited < n do
+		idx = Wrap(idx + searchDir)
+		visited = visited + 1
+
+		-- Check if we've reached a new row
+		if IsGroup(idx) then
+			-- Headers are always their own row
+			foundNewRow = true
+			break
+		else
+			local col = GetSongColLocal(idx)
+			if searchDir > 0 then
+				-- Moving down: new row starts at col 1
+				if col == 1 then foundNewRow = true; break end
+			else
+				-- Moving up: new row ends at col COLS (or last song before header)
+				local nextIdx = Wrap(idx + 1)
+				if col == COLS or IsGroup(nextIdx) then foundNewRow = true; break end
+			end
+		end
+	end
+
+	if not foundNewRow then return end
+
+	-- Now find the best item in this row (prefer same column)
+	local rowStart = idx
+	local bestIdx = idx
+
+	if IsSong(idx) and currentCol > 0 then
+		-- Find the item with matching or closest column
+		local bestColDiff = math.abs(GetSongColLocal(idx) - currentCol)
+
+		-- Check other items in same row
+		local checkIdx = idx
+		while true do
+			local nextIdx = Wrap(checkIdx + searchDir)
+			if IsGroup(nextIdx) then break end
+			local nextCol = GetSongColLocal(nextIdx)
+
+			-- Check if still in same row
+			if searchDir > 0 then
+				if nextCol <= GetSongColLocal(checkIdx) then break end
+			else
+				if nextCol >= GetSongColLocal(checkIdx) then break end
+			end
+
+			local colDiff = math.abs(nextCol - currentCol)
+			if colDiff < bestColDiff then
+				bestColDiff = colDiff
+				bestIdx = nextIdx
+			end
+			checkIdx = nextIdx
+		end
+	end
+
+	Cursor = bestIdx
+
+	-- Calculate and animate scroll offset
+	local offset = CalcScrollOffset(oldCursor, Cursor)
+	if offset ~= 0 then
+		local vel = GetCurrentAnimVelNorm()
+		StartScrollAnim(offset, vel)
 	end
 
 	Refresh()
@@ -1611,14 +2229,39 @@ end
 -- ============================================================================
 
 local function InputHandler(event)
-	if event.type == "InputEventType_Release" then return false end
-	if Accepted then return true end
-
 	local button = event.GameButton
 	if not button then return false end
 
+	-- Track button held state
+	if event.type == "InputEventType_Release" then
+		ButtonHeld[button] = false
+		return false
+	end
+	ButtonHeld[button] = true
+
+	if Accepted then return true end
+
 	local pn = event.PlayerNumber
 	if not pn then return false end
+
+	-- Check for simultaneous Up+Down press (jump to folder header)
+	if (button == "MenuUp" or button == "MenuDown") and
+	   ButtonHeld["MenuUp"] and ButtonHeld["MenuDown"] then
+		JumpToFolderHeader()
+		return true
+	end
+
+	-- When TwoPartDiff is active, let it handle input (except Back to cancel)
+	if TwoPartActive then
+		if button == "Back" then
+			-- Cancel TwoPartDiff selection
+			MESSAGEMAN:Broadcast("SongUnchosen")
+			SOUND:PlayOnce(THEME:GetPathS("Common", "cancel"))
+			return true
+		end
+		-- Let TwoPartDiff's own input handler process other buttons
+		return false
+	end
 
 	-- When diff picker is open, route input to picker (blocks all else)
 	if DiffPickOpen then
@@ -1704,16 +2347,20 @@ local function InputHandler(event)
 
 	-- Normal navigation (no menu open for this player)
 	if button == "MenuRight" then
-		MoveCursor(1)
+		MoveCursorByItems(1)
+		SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
 		return true
 	elseif button == "MenuLeft" then
-		MoveCursor(-1)
+		MoveCursorByItems(-1)
+		SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
 		return true
 	elseif button == "MenuDown" then
-		MoveCursor(COLS)
+		MoveCursorByRows(1)
+		SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
 		return true
 	elseif button == "MenuUp" then
-		MoveCursor(-COLS)
+		MoveCursorByRows(-1)
+		SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
 		return true
 	elseif button == "Start" then
 		if IsGroup(Cursor) then
@@ -1756,6 +2403,7 @@ local t = Def.ActorFrame{
 
 		-- Build initial data
 		BuildFlatList()
+		RebuildLayoutCache()
 
 		-- Restore cursor position from previous visit
 		RestoreCursorState()
@@ -1778,26 +2426,77 @@ local t = Def.ActorFrame{
 		StopPreview()
 	end,
 
+	-- TwoPartDiff confirmation messages
+	OKPlayerNumber_P1MessageCommand = function(self)
+		OnTwoPartConfirm(PLAYER_1)
+		-- Check if we should transition
+		if Accepted then
+			self:sleep(1.5):queuecommand("DoTransition")
+		end
+	end,
+	OKPlayerNumber_P2MessageCommand = function(self)
+		OnTwoPartConfirm(PLAYER_2)
+		-- Check if we should transition
+		if Accepted then
+			self:sleep(1.5):queuecommand("DoTransition")
+		end
+	end,
+	DoTransitionCommand = function(self)
+		if Accepted then
+			SCREENMAN:GetTopScreen():StartTransitioningScreen("SM_GoToNextScreen")
+		end
+	end,
+	SongUnchosenMessageCommand = function(self)
+		OnSongUnchosen()
+	end,
+
 	CursorChangedMessageCommand = function(self)
 		Refresh()
-		-- Refresh score panels when cursor lands on a song
+
+		-- Set GAMESTATE current song/steps so original overlay components receive messages
 		local item = FlatList[Cursor]
-		local song = nil
 		if IsSong(Cursor) then
-			song = item[1]
+			local song = item[1]
+			GAMESTATE:SetCurrentSong(song)
+			-- Set steps for each player (prefer their last difficulty, or first available)
+			local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+			for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+				local pref = GAMESTATE:GetPreferredDifficulty(pn)
+				local steps = nil
+				if pref then
+					steps = song:GetOneSteps(st, pref)
+				end
+				if not steps then
+					local allSteps = song:GetStepsByStepsType(st)
+					if #allSteps > 0 then steps = allSteps[1] end
+				end
+				if steps then
+					GAMESTATE:SetCurrentSteps(pn, steps)
+				end
+			end
+		else
+			GAMESTATE:SetCurrentSong(nil)
 		end
-		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
-			RefreshScorePanel(pn, song)
-		end
+
 		-- Start song preview
 		StartPreview()
 	end,
 }
 
+-- ============================================================================
+-- OVERLAY COMPONENTS (from ScreenSelectMusic)
+-- ============================================================================
+
 -- Pool root container (centered on screen)
+-- Matches original MusicWheel positioning and zoom from ScreenSelectMusic metrics
 local poolRoot = Def.ActorFrame{
 	Name = "PoolRoot",
-	InitCommand = function(s) s:xy(SCREEN_CENTER_X, SCREEN_CENTER_Y) end,
+	InitCommand = function(s)
+		s:xy(SCREEN_CENTER_X, SCREEN_CENTER_Y + 25)
+		s:zoom(0.4)  -- Original MusicWheelOnCommand has zoom,0.4
+		s:SetDrawByZPosition(true)
+		s:fov(60)
+	end,
 }
 
 -- Create song card pool
@@ -1812,7 +2511,114 @@ end
 
 t[#t + 1] = poolRoot
 
--- Difficulty pickers (one per player, created even if not needed)
+-- ============================================================================
+-- SONG INFO PANEL (top center - jacket, title, artist, BPM)
+-- ============================================================================
+t[#t + 1] = loadfile(THEME:GetPathB("ScreenSelectMusic", "overlay/Info"))() .. {
+	OnCommand = function(s)
+		s:zoom(0.667):y(57)
+		s:diffusealpha(0):sleep(0.4):linear(0.05):diffusealpha(0.75)
+		s:linear(0.1):diffusealpha(0.25):linear(0.1):diffusealpha(1)
+	end,
+}
+
+-- ============================================================================
+-- STAGE DISPLAY (top left - 1st, 2nd, Final, etc.)
+-- ============================================================================
+t[#t + 1] = loadfile(THEME:GetPathB("ScreenSelectMusic", "overlay/StageDisplay"))() .. {
+	OnCommand = function(s)
+		s:zoom(0.667)
+		s:diffusealpha(0):sleep(0.4):linear(0.05):diffusealpha(0.75)
+		s:linear(0.1):diffusealpha(0.25):linear(0.1):diffusealpha(1)
+	end,
+}
+
+-- ============================================================================
+-- PER-PLAYER COMPONENTS (Difficulty panel, Radar, Target Score, Shock Arrows)
+-- ============================================================================
+for _, pn in pairs(GAMESTATE:GetEnabledPlayers()) do
+	-- Difficulty Panel (left side for P1, right side for P2)
+	-- Adjusted: lower and slightly inward
+	t[#t + 1] = loadfile(THEME:GetPathB("ScreenSelectMusic", "overlay/Difficulty"))(pn) .. {
+		InitCommand = function(s)
+			s:xy(pn == PLAYER_1 and SCREEN_LEFT + 100 or SCREEN_RIGHT - 100, _screen.cy - 90)
+			s:zoom(0.667)
+		end,
+	}
+
+	-- Groove Radar (adjusted: lower and slightly inward)
+	t[#t + 1] = loadfile(THEME:GetPathB("ScreenSelectMusic", "overlay/RadarHandler/default.lua"))(pn) .. {
+		InitCommand = function(s)
+			s:xy(pn == PLAYER_1 and SCREEN_LEFT + 92 or SCREEN_RIGHT - 92, _screen.cy + 30)
+			s:zoom(0.667)
+		end,
+	}
+
+	-- Target Score Panel (uses its own positioning from default.lua)
+	t[#t + 1] = loadfile(THEME:GetPathB("ScreenSelectMusic", "overlay/TargetScore/default.lua"))(pn)
+
+	-- Shock Arrows Indicator (aligned with radar)
+	t[#t + 1] = loadfile(THEME:GetPathB("ScreenSelectMusic", "overlay/ShockArrows/default.lua"))(pn) .. {
+		InitCommand = function(s)
+			s:xy(pn == PLAYER_1 and SCREEN_LEFT + 92 or SCREEN_RIGHT - 92, _screen.cy + 42)
+			s:zoom(0.667)
+		end,
+	}
+end
+
+-- ============================================================================
+-- TWO-PART DIFFICULTY PICKER (shown when confirming song)
+-- ============================================================================
+local TwoPartDiffContainer = Def.ActorFrame{
+	Name = "TwoPartDiffContainer",
+	StartSelectingStepsMessageCommand = function(s)
+		s:RemoveAllChildren()
+		s:AddChildFromPath(THEME:GetPathB("ScreenSelectMusic", "overlay/TwoPartDiff"))
+	end,
+	SongUnchosenMessageCommand = function(s)
+		s:sleep(0.2):queuecommand("Remove")
+	end,
+	RemoveCommand = function(s)
+		s:RemoveAllChildren()
+	end,
+}
+t[#t + 1] = TwoPartDiffContainer
+
+-- ============================================================================
+-- FOOTER (bottom - "SELECT MUSIC" text)
+-- ============================================================================
+t[#t + 1] = Def.ActorFrame{
+	Name = "Footer",
+	InitCommand = function(s)
+		s:xy(SCREEN_CENTER_X, SCREEN_BOTTOM - 22)
+	end,
+	OnCommand = function(s)
+		s:diffusealpha(0):sleep(0.4):linear(0.05):diffusealpha(0.75)
+		s:linear(0.1):diffusealpha(0.25):linear(0.1):diffusealpha(1)
+	end,
+
+	-- Footer base
+	Def.Sprite{
+		InitCommand = function(s)
+			s:Load(footerPath .. Model() .. "base.png")
+			s:zoom(0.667):y(11)
+		end,
+	},
+
+	-- Footer text (SELECT MUSIC)
+	Def.Sprite{
+		InitCommand = function(s)
+			s:Load(footerPath .. Model() .. Language() .. "selmus.png")
+			s:zoom(0.667):xy(0.5, 12)
+		end,
+	},
+}
+
+-- ============================================================================
+-- OUR CUSTOM COMPONENTS (kept for functionality)
+-- ============================================================================
+
+-- Difficulty pickers (our simple version, hidden by default - TwoPartDiff is primary)
 t[#t + 1] = MakeDiffPicker(PLAYER_1)
 t[#t + 1] = MakeDiffPicker(PLAYER_2)
 
@@ -1820,52 +2626,8 @@ t[#t + 1] = MakeDiffPicker(PLAYER_2)
 t[#t + 1] = MakeMenu(PLAYER_1)
 t[#t + 1] = MakeMenu(PLAYER_2)
 
--- Score panels (one per player)
-t[#t + 1] = MakeScorePanel(PLAYER_1)
-t[#t + 1] = MakeScorePanel(PLAYER_2)
-
 -- Song preview actor
 t[#t + 1] = MakePreviewActor()
-
--- Debug info display
-t[#t+1] = Def.BitmapText{
-	Name = "DebugText",
-	Font = "Common Normal",
-	Text = "",
-	InitCommand = function(self)
-		self:xy(SCREEN_CENTER_X, SCREEN_TOP + 80):diffuse(1,1,1,1):shadowlength(2):zoom(0.8)
-	end,
-	OnCommand = function(self)
-		self:queuecommand("Update")
-	end,
-	UpdateCommand = function(self)
-		local item = FlatList[Cursor]
-		local info = "ScreenA3Music - Stage 9 (Polish)\n"
-		info = info .. "Items: " .. #FlatList .. "  Cursor: " .. Cursor
-		info = info .. "  Row: " .. GetRow(Cursor) .. "  Col: " .. GetCol(Cursor) .. "\n"
-		info = info .. "Open: " .. (OpenGroup ~= "" and OpenGroup or "(none)")
-		if DiffPickOpen then
-			info = info .. "  [DIFF PICKER]"
-		end
-		if AnyMenuOpen() then
-			info = info .. "  [MENU]"
-		end
-		info = info .. "\n"
-
-		if IsGroup(Cursor) then
-			info = info .. ">> GROUP: " .. item
-		elseif IsSong(Cursor) then
-			local song = item[1]
-			info = info .. ">> " .. song:GetDisplayMainTitle()
-		end
-
-		info = info .. "\nSelect=options  Start=select  Back=exit"
-		self:settext(info)
-	end,
-	CursorChangedMessageCommand = function(self)
-		self:queuecommand("Update")
-	end,
-}
 
 
 return t

@@ -1,5 +1,6 @@
-return Def.ActorFrame {
-	loadfile(THEME:GetPathB("","_normaldoors"))()..{
-		OnCommand=function(s) s:finishtweening():playcommand("AnimStand") end,
-	};
+-- Load the video background from ScreenWithMenuElements
+return LoadActor(THEME:GetPathB("ScreenWithMenuElements","background/"..Model().."background"))..{
+	InitCommand=function(s)
+		s:FullScreen()
+	end,
 };
