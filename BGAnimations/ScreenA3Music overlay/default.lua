@@ -54,6 +54,47 @@ local PlayerOptions = {}  -- PlayerOptions[pn] = { {name, choices, selected}, ..
 -- Score panel state (Stage 8)
 local ScorePanelFrame = {}  -- ScorePanelFrame[pn] = ActorFrame reference
 
+-- Song preview state (Stage 9)
+local PreviewActor = nil
+local PreviewGen = 0           -- generation counter to cancel stale previews
+local CurrentPreviewPath = nil -- path of currently playing preview
+local PREVIEW_DELAY = 0.3      -- seconds before starting preview
+
+-- Cursor persistence (survives screen transitions)
+A3MusicCursorState = A3MusicCursorState or {}
+
+local function SaveCursorState()
+	A3MusicCursorState.cursor = Cursor
+	A3MusicCursorState.openGroup = OpenGroup
+	-- Also save the song dir if on a song, for matching after rebuild
+	if IsSong(Cursor) then
+		local song = FlatList[Cursor][1]
+		A3MusicCursorState.songDir = song:GetSongDir()
+	else
+		A3MusicCursorState.songDir = nil
+	end
+end
+
+local function RestoreCursorState()
+	local saved = A3MusicCursorState
+	if saved.openGroup and saved.openGroup ~= "" then
+		OpenGroup = saved.openGroup
+		BuildFlatList()
+	end
+	if saved.cursor and saved.cursor >= 1 and saved.cursor <= #FlatList then
+		Cursor = saved.cursor
+	end
+	-- Try to match by song dir if available (in case list order changed)
+	if saved.songDir then
+		for i, item in ipairs(FlatList) do
+			if type(item) == "table" and item[1] and item[1]:GetSongDir() == saved.songDir then
+				Cursor = i
+				break
+			end
+		end
+	end
+end
+
 -- ============================================================================
 -- DATA MODEL (Stage 2)
 -- ============================================================================
@@ -555,6 +596,8 @@ end
 
 local function ConfirmDifficulty()
 	if Accepted then return end
+	SaveCursorState()
+	StopPreview()
 	GAMESTATE:SetCurrentSong(DiffSong)
 	GAMESTATE:SetCurrentPlayMode("PlayMode_Regular")
 	for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
@@ -583,6 +626,8 @@ local function ConfirmSong()
 	if #stepsArray == 0 then return end
 	if #stepsArray == 1 then
 		-- Single difficulty - skip picker
+		SaveCursorState()
+		StopPreview()
 		GAMESTATE:SetCurrentSong(song)
 		GAMESTATE:SetCurrentPlayMode("PlayMode_Regular")
 		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
@@ -1293,6 +1338,75 @@ local function MakeScorePanel(pn)
 end
 
 -- ============================================================================
+-- SONG PREVIEW (Stage 9)
+-- ============================================================================
+
+local function StopPreview()
+	PreviewGen = PreviewGen + 1
+	if CurrentPreviewPath then
+		CurrentPreviewPath = nil
+		SOUND:StopMusic()
+	end
+end
+
+local function StartPreview()
+	PreviewGen = PreviewGen + 1
+	if PreviewActor then
+		PreviewActor:stoptweening()
+		PreviewActor:sleep(PREVIEW_DELAY)
+		PreviewActor:queuecommand("DoPreview")
+		PreviewActor._gen = PreviewGen
+	end
+end
+
+-- Factory: Create preview actor (invisible, just handles timing)
+local function MakePreviewActor()
+	return Def.Actor{
+		Name = "PreviewActor",
+		InitCommand = function(self)
+			PreviewActor = self
+			self._gen = 0
+		end,
+		DoPreviewCommand = function(self)
+			-- Check generation to cancel stale previews
+			if self._gen ~= PreviewGen then return end
+
+			-- Get current song from cursor
+			local song = nil
+			if IsSong(Cursor) then
+				local item = FlatList[Cursor]
+				song = item[1]
+			end
+
+			if song then
+				local path = song:GetPreviewMusicPath()
+				if path and path ~= "" then
+					-- Skip if already playing this file
+					if path == CurrentPreviewPath then return end
+					CurrentPreviewPath = path
+					SOUND:PlayMusicPart(
+						path,
+						song:GetSampleStart(),
+						song:GetSampleLength(),
+						0,    -- fadeIn
+						0,    -- fadeOut
+						true, -- loop
+						false,-- applyRate
+						false -- alignBeat
+					)
+				end
+			else
+				-- On a group header - stop music
+				StopPreview()
+			end
+		end,
+		OffCommand = function(self)
+			StopPreview()
+		end,
+	}
+end
+
+-- ============================================================================
 -- LAYOUT & SCROLL (Stage 4)
 -- ============================================================================
 
@@ -1643,6 +1757,9 @@ local t = Def.ActorFrame{
 		-- Build initial data
 		BuildFlatList()
 
+		-- Restore cursor position from previous visit
+		RestoreCursorState()
+
 		-- Set up input handler
 		SCREENMAN:GetTopScreen():AddInputCallback(InputHandler)
 
@@ -1658,6 +1775,7 @@ local t = Def.ActorFrame{
 
 	OffCommand = function(self)
 		self:finishtweening()
+		StopPreview()
 	end,
 
 	CursorChangedMessageCommand = function(self)
@@ -1671,6 +1789,8 @@ local t = Def.ActorFrame{
 		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
 			RefreshScorePanel(pn, song)
 		end
+		-- Start song preview
+		StartPreview()
 	end,
 }
 
@@ -1704,6 +1824,9 @@ t[#t + 1] = MakeMenu(PLAYER_2)
 t[#t + 1] = MakeScorePanel(PLAYER_1)
 t[#t + 1] = MakeScorePanel(PLAYER_2)
 
+-- Song preview actor
+t[#t + 1] = MakePreviewActor()
+
 -- Debug info display
 t[#t+1] = Def.BitmapText{
 	Name = "DebugText",
@@ -1717,7 +1840,7 @@ t[#t+1] = Def.BitmapText{
 	end,
 	UpdateCommand = function(self)
 		local item = FlatList[Cursor]
-		local info = "ScreenA3Music - Stage 8 (Score Panel)\n"
+		local info = "ScreenA3Music - Stage 9 (Polish)\n"
 		info = info .. "Items: " .. #FlatList .. "  Cursor: " .. Cursor
 		info = info .. "  Row: " .. GetRow(Cursor) .. "  Col: " .. GetCol(Cursor) .. "\n"
 		info = info .. "Open: " .. (OpenGroup ~= "" and OpenGroup or "(none)")
