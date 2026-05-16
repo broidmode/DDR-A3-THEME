@@ -60,6 +60,8 @@ local PreviewActor = nil
 local PreviewGen = 0           -- generation counter to cancel stale previews
 local CurrentPreviewPath = nil -- path of currently playing preview
 local PREVIEW_DELAY = 0.3      -- seconds before starting preview
+local MENU_MUSIC_PATH = nil    -- resolved lazily to avoid load-time issues
+local PlayingMenuMusic = false -- true when menu BGM is playing (vs song preview)
 
 -- Button state tracking (for simultaneous press detection)
 local ButtonHeld = {}  -- ButtonHeld["MenuUp"] = true/false
@@ -67,38 +69,10 @@ local ButtonHeld = {}  -- ButtonHeld["MenuUp"] = true/false
 -- Cursor persistence (survives screen transitions)
 A3MusicCursorState = A3MusicCursorState or {}
 
-local function SaveCursorState()
-	A3MusicCursorState.cursor = Cursor
-	A3MusicCursorState.openGroup = OpenGroup
-	-- Also save the song dir if on a song, for matching after rebuild
-	if IsSong(Cursor) then
-		local song = FlatList[Cursor][1]
-		A3MusicCursorState.songDir = song:GetSongDir()
-	else
-		A3MusicCursorState.songDir = nil
-	end
-end
-
-local function RestoreCursorState()
-	local saved = A3MusicCursorState
-	if saved.openGroup and saved.openGroup ~= "" then
-		OpenGroup = saved.openGroup
-		BuildFlatList()
-		if RebuildLayoutCache then RebuildLayoutCache() end
-	end
-	if saved.cursor and saved.cursor >= 1 and saved.cursor <= #FlatList then
-		Cursor = saved.cursor
-	end
-	-- Try to match by song dir if available (in case list order changed)
-	if saved.songDir then
-		for i, item in ipairs(FlatList) do
-			if type(item) == "table" and item[1] and item[1]:GetSongDir() == saved.songDir then
-				Cursor = i
-				break
-			end
-		end
-	end
-end
+-- Forward declarations for functions defined later in the file
+local SaveCursorState
+local RestoreCursorState
+local StopPreview
 
 -- ============================================================================
 -- DATA MODEL (Stage 2)
@@ -191,6 +165,9 @@ local function BuildFlatList()
 	local list = {}
 	local groups = SONGMAN:GetSongGroupNames()
 
+	-- Sort groups in reverse alphabetical order
+	table.sort(groups, function(a, b) return a > b end)
+
 	for _, grp in ipairs(groups) do
 		list[#list+1] = grp
 
@@ -213,6 +190,40 @@ local function BuildFlatList()
 	FlatList = list
 	Cursor = math.min(Cursor, math.max(1, #FlatList))
 	Trace("[ScreenA3Music] BuildFlatList: " .. #FlatList .. " items, " .. #groups .. " groups")
+end
+
+-- Cursor persistence functions (defined here because they need IsSong/BuildFlatList)
+SaveCursorState = function()
+	A3MusicCursorState.cursor = Cursor
+	A3MusicCursorState.openGroup = OpenGroup
+	-- Also save the song dir if on a song, for matching after rebuild
+	if IsSong(Cursor) then
+		local song = FlatList[Cursor][1]
+		A3MusicCursorState.songDir = song:GetSongDir()
+	else
+		A3MusicCursorState.songDir = nil
+	end
+end
+
+RestoreCursorState = function()
+	local saved = A3MusicCursorState
+	if saved.openGroup and saved.openGroup ~= "" then
+		OpenGroup = saved.openGroup
+		BuildFlatList()
+		if RebuildLayoutCache then RebuildLayoutCache() end
+	end
+	if saved.cursor and saved.cursor >= 1 and saved.cursor <= #FlatList then
+		Cursor = saved.cursor
+	end
+	-- Try to match by song dir if available (in case list order changed)
+	if saved.songDir then
+		for i, item in ipairs(FlatList) do
+			if type(item) == "table" and item[1] and item[1]:GetSongDir() == saved.songDir then
+				Cursor = i
+				break
+			end
+		end
+	end
 end
 
 -- Toggle a group open/closed
@@ -475,10 +486,10 @@ local function MakeSongCard(idx)
 			},
 		},
 
-		-- Difficulty hex background
+		-- Difficulty hex background (matches original MusicWheelItem position)
 		Def.ActorFrame{
 			Name = "DiffArea",
-			InitCommand = function(s) s:xy(-54, -16) end,  -- adjusted: lower and right
+			InitCommand = function(s) s:xy(-74, -36) end,
 
 			Def.Sprite{
 				Name = "DiffHex",
@@ -709,9 +720,17 @@ local function UpdateSongCard(actor, entry, isFocused)
 	end
 
 	-- Get current steps for difficulty display
+	-- Use player's preferred difficulty if set, otherwise use first available
 	local pn = GAMESTATE:GetMasterPlayerNumber()
 	local st = GAMESTATE:GetCurrentStyle() and GAMESTATE:GetCurrentStyle():GetStepsType()
-	local steps = #entry > 1 and entry[2] or nil  -- First steps in entry
+	local prefDiff = GAMESTATE:GetPreferredDifficulty(pn)
+	local steps = nil
+	if prefDiff and st then
+		steps = song:GetOneSteps(st, prefDiff)
+	end
+	if not steps and #entry > 1 then
+		steps = entry[2]  -- Fall back to first steps in entry
+	end
 
 	-- Difficulty display
 	local diffArea = actor:GetChild("DiffArea")
@@ -827,14 +846,14 @@ local function UpdateGroupHeader(actor, groupName, isExpanded, isFocused)
 	-- Group name text
 	local nameText = actor:GetChild("GroupName")
 	if nameText then
-		-- Format group name (strip leading numbers for Group sort, etc.)
+		-- Format group name (strip leading numbers + hyphen, e.g., "20250409 - Foo" -> "Foo")
 		local displayName = groupName
 		if SongAttributes and SongAttributes.GetGroupName then
 			displayName = SongAttributes.GetGroupName(groupName)
 		end
-		if GAMESTATE:GetSortOrder() == "SortOrder_Group" then
-			displayName = string.gsub(displayName, "^%d%d? ?%- ?", "")
-		elseif GAMESTATE:GetSortOrder() == "SortOrder_TopGrades" then
+		-- Strip any leading digits followed by optional space, hyphen, optional space
+		displayName = string.gsub(displayName, "^%d+ ?%- ?", "")
+		if GAMESTATE:GetSortOrder() == "SortOrder_TopGrades" then
 			displayName = string.gsub(displayName, "AAAA", "AAA+")
 		end
 		nameText:settext(displayName)
@@ -948,23 +967,12 @@ local function ConfirmSong()
 	end
 	if #stepsArray == 0 then return end
 
-	if #stepsArray == 1 then
-		SaveCursorState()
-		StopPreview()
-		GAMESTATE:SetCurrentSong(song)
-		GAMESTATE:SetCurrentPlayMode("PlayMode_Regular")
-		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
-			GAMESTATE:SetCurrentSteps(pn, stepsArray[1])
-		end
-		Accepted = true
-		SOUND:PlayOnce(THEME:GetPathS("Common", "start"))
-		SCREENMAN:GetTopScreen():StartTransitioningScreen("SM_GoToNextScreen")
-	else
-		TwoPartActive = true
-		TwoPartConfirmed[PLAYER_1] = false
-		TwoPartConfirmed[PLAYER_2] = false
-		MESSAGEMAN:Broadcast("StartSelectingSteps")
-	end
+	-- Always show TwoPartDiff for difficulty selection, even for single-difficulty songs
+	GAMESTATE:SetCurrentSong(song)
+	TwoPartActive = true
+	TwoPartConfirmed[PLAYER_1] = false
+	TwoPartConfirmed[PLAYER_2] = false
+	MESSAGEMAN:Broadcast("StartSelectingSteps")
 end
 
 local function OnTwoPartConfirm(pn)
@@ -1724,12 +1732,35 @@ end
 -- SONG PREVIEW (Stage 9)
 -- ============================================================================
 
-local function StopPreview()
+StopPreview = function()
 	PreviewGen = PreviewGen + 1
-	if CurrentPreviewPath then
-		CurrentPreviewPath = nil
-		SOUND:StopMusic()
+	CurrentPreviewPath = nil
+	PlayingMenuMusic = false
+	SOUND:StopMusic()
+end
+
+local function PlayMenuMusic()
+	if PlayingMenuMusic then return end
+	-- Resolve path lazily on first use
+	if not MENU_MUSIC_PATH then
+		-- Try GetPathS first, fall back to direct path
+		MENU_MUSIC_PATH = THEME:GetPathS("ScreenSelectMusic", "music (loop)")
+		Trace("[ScreenA3Music] GetPathS result: " .. tostring(MENU_MUSIC_PATH))
+		if not MENU_MUSIC_PATH or MENU_MUSIC_PATH == "" then
+			-- Direct path to the actual ogg file
+			MENU_MUSIC_PATH = THEME:GetCurrentThemeDirectory() .. "Sounds/02 - SelectMusic (loop).ogg"
+			Trace("[ScreenA3Music] Using fallback path: " .. tostring(MENU_MUSIC_PATH))
+		end
 	end
+	if not MENU_MUSIC_PATH or MENU_MUSIC_PATH == "" then
+		Trace("[ScreenA3Music] ERROR: No menu music path!")
+		return
+	end
+	CurrentPreviewPath = nil
+	PlayingMenuMusic = true
+	Trace("[ScreenA3Music] Playing menu music: " .. MENU_MUSIC_PATH)
+	-- Use large length (300s) since we're looping - length=0 may mean "don't play"
+	SOUND:PlayMusicPart(MENU_MUSIC_PATH, 0, 300, 0.5, 0.5, true, false, false)
 end
 
 local function StartPreview()
@@ -1752,7 +1783,10 @@ local function MakePreviewActor()
 		end,
 		DoPreviewCommand = function(self)
 			-- Check generation to cancel stale previews
-			if self._gen ~= PreviewGen then return end
+			if self._gen ~= PreviewGen then
+				Trace("[ScreenA3Music] Preview cancelled (gen mismatch: " .. self._gen .. " vs " .. PreviewGen .. ")")
+				return
+			end
 
 			-- Get current song from cursor
 			local song = nil
@@ -1765,8 +1799,13 @@ local function MakePreviewActor()
 				local path = song:GetPreviewMusicPath()
 				if path and path ~= "" then
 					-- Skip if already playing this file
-					if path == CurrentPreviewPath then return end
+					if path == CurrentPreviewPath then
+						Trace("[ScreenA3Music] Already playing: " .. path)
+						return
+					end
 					CurrentPreviewPath = path
+					PlayingMenuMusic = false
+					Trace("[ScreenA3Music] Playing song preview: " .. path)
 					SOUND:PlayMusicPart(
 						path,
 						song:GetSampleStart(),
@@ -1777,10 +1816,13 @@ local function MakePreviewActor()
 						false,-- applyRate
 						false -- alignBeat
 					)
+				else
+					Trace("[ScreenA3Music] Song has no preview path")
 				end
 			else
-				-- On a group header - stop music
-				StopPreview()
+				-- On a group header - play menu music
+				Trace("[ScreenA3Music] On group header, playing menu music")
+				PlayMenuMusic()
 			end
 		end,
 		OffCommand = function(self)
@@ -2429,26 +2471,30 @@ local t = Def.ActorFrame{
 	-- TwoPartDiff confirmation messages
 	OKPlayerNumber_P1MessageCommand = function(self)
 		OnTwoPartConfirm(PLAYER_1)
-		-- Check if we should transition
 		if Accepted then
-			self:sleep(1.5):queuecommand("DoTransition")
+			self:sleep(1.5):queuecommand("GoToGameplay")
 		end
 	end,
 	OKPlayerNumber_P2MessageCommand = function(self)
 		OnTwoPartConfirm(PLAYER_2)
-		-- Check if we should transition
 		if Accepted then
-			self:sleep(1.5):queuecommand("DoTransition")
+			self:sleep(1.5):queuecommand("GoToGameplay")
 		end
 	end,
-	DoTransitionCommand = function(self)
+	GoToGameplayCommand = function(self)
 		if Accepted then
-			SCREENMAN:GetTopScreen():StartTransitioningScreen("SM_GoToNextScreen")
+			SCREENMAN:SetNewScreen("ScreenStageInformation")
 		end
 	end,
 	SongUnchosenMessageCommand = function(self)
 		OnSongUnchosen()
 	end,
+
+	-- Refresh cards when difficulty changes in TwoPartDiff
+	TwoDiffLeftPlayerNumber_P1MessageCommand = function(self) Refresh() end,
+	TwoDiffRightPlayerNumber_P1MessageCommand = function(self) Refresh() end,
+	TwoDiffLeftPlayerNumber_P2MessageCommand = function(self) Refresh() end,
+	TwoDiffRightPlayerNumber_P2MessageCommand = function(self) Refresh() end,
 
 	CursorChangedMessageCommand = function(self)
 		Refresh()
@@ -2496,6 +2542,12 @@ local poolRoot = Def.ActorFrame{
 		s:zoom(0.4)  -- Original MusicWheelOnCommand has zoom,0.4
 		s:SetDrawByZPosition(true)
 		s:fov(60)
+	end,
+	StartSelectingStepsMessageCommand = function(s)
+		s:stoptweening():linear(0.2):diffusealpha(0)
+	end,
+	SongUnchosenMessageCommand = function(s)
+		s:stoptweening():sleep(0.2):linear(0.2):diffusealpha(1)
 	end,
 }
 

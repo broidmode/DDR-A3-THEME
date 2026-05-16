@@ -18,13 +18,13 @@ local center = math.ceil(numDiffs/2)
 
 --This is the variable for holding the frame after it's compiled
 local frame = {
-	["PlayerNumber_P1"] = nil,
-	["PlayerNumber_P2"] = nil
+	[PLAYER_1] = nil,
+	[PLAYER_2] = nil
 }
 --Take a wild guess.
 local selection = {
-	["PlayerNumber_P1"] = 1,
-	["PlayerNumber_P2"] = 1
+	[PLAYER_1] = 1,
+	[PLAYER_2] = 1
 }
 
 
@@ -68,7 +68,7 @@ local function genScrollerFrame(player)
 			OffCommand=function(s) s:playcommand("OK"..player) end,
 			Name=i;
 			Def.ActorFrame{
-				StartSelectingStepsMessageCommand=function(s) s:diffusealpha(0):sleep(0.5):linear(0.1):diffusealpha(1) end,
+				OnCommand=function(s) s:diffusealpha(0):sleep(0.5):linear(0.1):diffusealpha(1) end,
 				OffCommand=function(s)
 					s:sleep(outdelay):linear(0.2):diffusealpha(0)
 				end,
@@ -78,7 +78,7 @@ local function genScrollerFrame(player)
 				};
 			};
 			Def.Sprite{
-				StartSelectingStepsMessageCommand=function(s) s:diffusealpha(0):sleep(0.5):linear(0.1):diffusealpha(1) end,
+				OnCommand=function(s) s:diffusealpha(0):sleep(0.5):linear(0.1):diffusealpha(1) end,
 				Texture="line";
 				Name="Highlight";
 				InitCommand=cmd(y,-2;visible,i==selection[player];diffuseramp;effectcolor1,color("1,1,1,0");effectcolor2,color("1,1,1,1");effectperiod,.5);
@@ -148,7 +148,7 @@ local function genScrollerFrame(player)
 				};
 			};
 			LoadFont("difficulty numbers")..{
-				StartSelectingStepsMessageCommand=function(s) s:diffusealpha(0):sleep(0.5):linear(0.1):diffusealpha(1) end,
+				OnCommand=function(s) s:diffusealpha(0):sleep(0.5):linear(0.1):diffusealpha(1) end,
 				Text=steps:GetMeter();
 				InitCommand=cmd(xy,62,-17);
 				OffCommand=function(s)
@@ -157,7 +157,7 @@ local function genScrollerFrame(player)
 			};
 			Def.ActorFrame{
 				InitCommand=function(s) s:xy(84.6,-59):zoom(0.75) end,
-				StartSelectingStepsMessageCommand=function(s) s:diffusealpha(0):sleep(0.5):linear(0.1):diffusealpha(1) end,
+				OnCommand=function(s) s:diffusealpha(0):sleep(0.5):linear(0.1):diffusealpha(1) end,
 				Def.Sprite{
 					InitCommand=function(s) s:queuecommand("Set"):xy(29,13):zoom(1.2) end,
 					SetCommand=function(s)
@@ -217,7 +217,7 @@ local function genScrollerFrame(player)
 			Def.Sprite{
 				Texture="flash",
 				InitCommand=function(s) s:diffusealpha(0):y(-2) end,
-				StartSelectingStepsMessageCommand=function(s) s:sleep(0.3):linear(0.05):diffusealpha(1):sleep(0.05):linear(0.1):diffusealpha(0) end,
+				OnCommand=function(s) s:sleep(0.3):linear(0.05):diffusealpha(1):sleep(0.05):linear(0.1):diffusealpha(0) end,
 			};
 			Def.ActorFrame{
 			InitCommand=function(s) s:visible(false):queuecommand("Set") end,
@@ -261,7 +261,10 @@ local function genScrollerFrame(player)
 	return f;
 end;
 
-local keyset={0,0}
+local keyset = {
+	[PLAYER_1] = 0,
+	[PLAYER_2] = 0
+}
 
 local function DiffInputHandler(event)
 	local pn= event.PlayerNumber
