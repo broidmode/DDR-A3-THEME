@@ -14,6 +14,12 @@ local Prefs = {
 		Choices = { "Low", "Incremental", "Unlimited" },
 		Values  = { "low", "incremental", "full" },
 	},
+	-- Intro flow mode: Full shows all intro screens, Fast skips to profile then music
+	IntroMode = {
+		Default = "full",
+		Choices = { "Full", "Fast" },
+		Values  = { "full", "fast" },
+	},
 }
 
 ThemePrefs.InitAll(Prefs)

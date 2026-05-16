@@ -855,4 +855,33 @@ function OptionRowFailBehavior()
 	return t;
 end
 
+function OptionRowIntroMode()
+	local t = {
+		Name = "IntroMode";
+		LayoutType = "ShowAllInRow";
+		SelectType = "SelectOne";
+		OneChoiceForAllPlayers = true;
+		ExportOnChange = false;
+		Choices = {"Full", "Fast"};
+		LoadSelections = function(self, list, pn)
+			local pref = ThemePrefs.Get("IntroMode")
+			if pref == "fast" then
+				list[2] = true
+			else
+				list[1] = true
+			end
+		end;
+		SaveSelections = function(self, list, pn)
+			if list[2] then
+				ThemePrefs.Set("IntroMode", "fast")
+			else
+				ThemePrefs.Set("IntroMode", "full")
+			end
+			ThemePrefs.Save()
+		end;
+	};
+	setmetatable(t, t);
+	return t;
+end
+
 --Code by Midflight Digital

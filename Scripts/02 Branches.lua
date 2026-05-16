@@ -81,12 +81,21 @@ Branch = {
 		if SONGMAN:GetNumSongs() == 0 and SONGMAN:GetNumAdditionalSongs() == 0 then
 			return "ScreenHowToInstallSongs"
 		end
+		-- Fast intro mode skips language selection
+		if ThemePrefs.Get("IntroMode") == "fast" then
+			return Branch.Profile()
+		end
 		return "ScreenSelectLanguage"
 	end,
 	Profile = function()
 		if PROFILEMAN:GetNumLocalProfiles() >= 1 then
 			return "ScreenSelectProfile"
 		else
+			-- No profiles: Fast mode skips style selection and defaults to Single
+			if ThemePrefs.Get("IntroMode") == "fast" then
+				GAMESTATE:ApplyGameCommand("style,single")
+				return SelectMusicOrCourse()
+			end
 			return "ScreenSelectStyle"
 		end
 	end,
@@ -139,7 +148,12 @@ Branch = {
 		end
 	end,
 	AfterSelectProfile = function()
-			return "ScreenCaution"
+		-- Fast mode: skip style/caution, default to Single, go to music
+		if ThemePrefs.Get("IntroMode") == "fast" then
+			GAMESTATE:ApplyGameCommand("style,single")
+			return SelectMusicOrCourse()
+		end
+		return "ScreenSelectStyle"
 	end,
 	AfterProfileLoad = function()
 		return "ScreenSelectPlayMode"

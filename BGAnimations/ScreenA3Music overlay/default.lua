@@ -46,6 +46,9 @@ local DiffPickIdx = {}    -- per-player cursor index into DiffSteps
 local DiffPickOpen = false
 local Accepted = false    -- prevent double-confirm
 
+-- Player options overlay state
+local OptionsActive = false  -- true when PlayerOptions overlay is showing
+
 -- Side menu state (Stage 7)
 local MenuOpen = {}       -- MenuOpen[pn] = true/false
 local MenuRow = {}        -- MenuRow[pn] = current row index
@@ -66,8 +69,23 @@ local PlayingMenuMusic = false -- true when menu BGM is playing (vs song preview
 -- Button state tracking (for simultaneous press detection)
 local ButtonHeld = {}  -- ButtonHeld["MenuUp"] = true/false
 
--- Cursor persistence (survives screen transitions)
+-- Cursor persistence (survives screen transitions AND game restarts)
 A3MusicCursorState = A3MusicCursorState or {}
+
+-- Load cursor state from disk on first access
+local function LoadCursorStateFromDisk()
+	if A3MusicCursorState._loaded then return end
+	A3MusicCursorState._loaded = true
+	local savedGroup = ReadPrefFromFile("A3Music_OpenGroup")
+	local savedSongDir = ReadPrefFromFile("A3Music_SongDir")
+	if savedGroup and savedGroup ~= "" then
+		A3MusicCursorState.openGroup = savedGroup
+	end
+	if savedSongDir and savedSongDir ~= "" then
+		A3MusicCursorState.songDir = savedSongDir
+	end
+end
+LoadCursorStateFromDisk()
 
 -- Forward declarations for functions defined later in the file
 local SaveCursorState
@@ -203,6 +221,9 @@ SaveCursorState = function()
 	else
 		A3MusicCursorState.songDir = nil
 	end
+	-- Persist to disk for survival across game restarts
+	WritePrefToFile("A3Music_OpenGroup", OpenGroup or "")
+	WritePrefToFile("A3Music_SongDir", A3MusicCursorState.songDir or "")
 end
 
 RestoreCursorState = function()
@@ -970,6 +991,7 @@ local function ConfirmSong()
 	-- Always show TwoPartDiff for difficulty selection, even for single-difficulty songs
 	GAMESTATE:SetCurrentSong(song)
 	TwoPartActive = true
+	DiffPickOpen = true  -- Track that we're in difficulty selection (for OptionsClosed handling)
 	TwoPartConfirmed[PLAYER_1] = false
 	TwoPartConfirmed[PLAYER_2] = false
 	MESSAGEMAN:Broadcast("StartSelectingSteps")
@@ -993,11 +1015,13 @@ local function OnTwoPartConfirm(pn)
 		GAMESTATE:SetCurrentPlayMode("PlayMode_Regular")
 		Accepted = true
 		TwoPartActive = false
+		DiffPickOpen = false  -- No longer in difficulty selection
 	end
 end
 
 local function OnSongUnchosen()
 	TwoPartActive = false
+	DiffPickOpen = false  -- No longer in difficulty selection
 	TwoPartConfirmed[PLAYER_1] = false
 	TwoPartConfirmed[PLAYER_2] = false
 end
@@ -2293,12 +2317,22 @@ local function InputHandler(event)
 		return true
 	end
 
-	-- When TwoPartDiff is active, let it handle input (except Back to cancel)
+	-- When PlayerOptions overlay is active, let it handle all input
+	if OptionsActive then
+		return false
+	end
+
+	-- When TwoPartDiff is active, let it handle input (except Back/Select)
 	if TwoPartActive then
 		if button == "Back" then
 			-- Cancel TwoPartDiff selection
 			MESSAGEMAN:Broadcast("SongUnchosen")
 			SOUND:PlayOnce(THEME:GetPathS("Common", "cancel"))
+			return true
+		elseif button == "Select" then
+			-- Open PlayerOptions overlay from difficulty selection
+			OptionsActive = true
+			MESSAGEMAN:Broadcast("StartSelectingOptions")
 			return true
 		end
 		-- Let TwoPartDiff's own input handler process other buttons
@@ -2326,68 +2360,23 @@ local function InputHandler(event)
 			CloseDiffPicker()
 			SOUND:PlayOnce(THEME:GetPathS("_Screen", "cancel"))
 			return true
+		elseif button == "Select" then
+			-- Open PlayerOptions overlay from diff picker
+			OptionsActive = true
+			MESSAGEMAN:Broadcast("StartSelectingOptions")
+			return true
 		end
 		return true
 	end
 
-	-- Select opens/closes options menu for this player
+	-- Select button opens PlayerOptions overlay
 	if button == "Select" then
-		if MenuOpen[pn] then
-			CloseMenu(pn, true)  -- apply options on close
-			SOUND:PlayOnce(THEME:GetPathS("Common", "start"))
-		else
-			OpenMenu(pn)
-			SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
-		end
+		OptionsActive = true
+		MESSAGEMAN:Broadcast("StartSelectingOptions")
 		return true
 	end
 
-	-- When this player's menu is open, route their input to menu
-	if MenuOpen[pn] then
-		local rows = PlayerOptions[pn]
-		if button == "MenuUp" then
-			MenuRow[pn] = MenuRow[pn] - 1
-			if MenuRow[pn] < 1 then MenuRow[pn] = NUM_MENU_ROWS end
-			SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
-			RefreshMenu(pn)
-			return true
-		elseif button == "MenuDown" then
-			MenuRow[pn] = MenuRow[pn] + 1
-			if MenuRow[pn] > NUM_MENU_ROWS then MenuRow[pn] = 1 end
-			SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
-			RefreshMenu(pn)
-			return true
-		elseif button == "MenuLeft" then
-			local row = rows[MenuRow[pn]]
-			row.selected = row.selected - 1
-			if row.selected < 1 then row.selected = #row.choices end
-			-- Sync speed choices when mode changes
-			if MenuRow[pn] == 1 then SyncSpeedChoices(pn) end
-			SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
-			RefreshMenu(pn)
-			return true
-		elseif button == "MenuRight" then
-			local row = rows[MenuRow[pn]]
-			row.selected = row.selected + 1
-			if row.selected > #row.choices then row.selected = 1 end
-			-- Sync speed choices when mode changes
-			if MenuRow[pn] == 1 then SyncSpeedChoices(pn) end
-			SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
-			RefreshMenu(pn)
-			return true
-		elseif button == "Start" then
-			CloseMenu(pn, true)
-			SOUND:PlayOnce(THEME:GetPathS("Common", "start"))
-			return true
-		elseif button == "Back" then
-			CloseMenu(pn, false)  -- discard changes
-			SOUND:PlayOnce(THEME:GetPathS("_Screen", "cancel"))
-			return true
-		end
-		return true
-	end
-
-	-- Normal navigation (no menu open for this player)
+	-- Normal navigation
 	if button == "MenuRight" then
 		MoveCursorByItems(1)
 		SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
@@ -2483,11 +2472,16 @@ local t = Def.ActorFrame{
 	end,
 	GoToGameplayCommand = function(self)
 		if Accepted then
-			SCREENMAN:SetNewScreen("ScreenStageInformation")
+			SCREENMAN:GetTopScreen():StartTransitioningScreen("SM_GoToNextScreen")
 		end
 	end,
 	SongUnchosenMessageCommand = function(self)
 		OnSongUnchosen()
+	end,
+
+	-- PlayerOptions closed message
+	OptionsClosedMessageCommand = function(self)
+		OptionsActive = false
 	end,
 
 	-- Refresh cards when difficulty changes in TwoPartDiff
@@ -2548,6 +2542,16 @@ local poolRoot = Def.ActorFrame{
 	end,
 	SongUnchosenMessageCommand = function(s)
 		s:stoptweening():sleep(0.2):linear(0.2):diffusealpha(1)
+	end,
+	-- Fade out when options are shown
+	StartSelectingOptionsMessageCommand = function(s)
+		s:stoptweening():linear(0.2):diffusealpha(0)
+	end,
+	OptionsClosedMessageCommand = function(s)
+		-- Only fade in if we're NOT still in difficulty selection
+		if not DiffPickOpen then
+			s:stoptweening():sleep(0.2):linear(0.2):diffusealpha(1)
+		end
 	end,
 }
 
@@ -2633,8 +2637,34 @@ local TwoPartDiffContainer = Def.ActorFrame{
 	RemoveCommand = function(s)
 		s:RemoveAllChildren()
 	end,
+	-- Fade out when options are shown
+	StartSelectingOptionsMessageCommand = function(s)
+		s:stoptweening():linear(0.2):diffusealpha(0)
+	end,
+	OptionsClosedMessageCommand = function(s)
+		s:stoptweening():linear(0.2):diffusealpha(1)
+	end,
 }
 t[#t + 1] = TwoPartDiffContainer
+
+-- ============================================================================
+-- PLAYER OPTIONS OVERLAY (shown when Select is pressed)
+-- ============================================================================
+local PlayerOptionsContainer = Def.ActorFrame{
+	Name = "PlayerOptionsContainer",
+	StartSelectingOptionsMessageCommand = function(s)
+		s:RemoveAllChildren()
+		s:AddChildFromPath(THEME:GetPathB("ScreenA3Music", "overlay/PlayerOptions"))
+	end,
+	OptionsClosedMessageCommand = function(s)
+		OptionsActive = false
+		s:sleep(0.3):queuecommand("Remove")
+	end,
+	RemoveCommand = function(s)
+		s:RemoveAllChildren()
+	end,
+}
+t[#t + 1] = PlayerOptionsContainer
 
 -- ============================================================================
 -- FOOTER (bottom - "SELECT MUSIC" text)
@@ -2647,6 +2677,16 @@ t[#t + 1] = Def.ActorFrame{
 	OnCommand = function(s)
 		s:diffusealpha(0):sleep(0.4):linear(0.05):diffusealpha(0.75)
 		s:linear(0.1):diffusealpha(0.25):linear(0.1):diffusealpha(1)
+	end,
+	-- Fade out when options are shown
+	StartSelectingOptionsMessageCommand = function(s)
+		s:stoptweening():linear(0.2):diffusealpha(0)
+	end,
+	OptionsClosedMessageCommand = function(s)
+		-- Only fade in if we're NOT still in difficulty selection
+		if not DiffPickOpen then
+			s:stoptweening():sleep(0.2):linear(0.2):diffusealpha(1)
+		end
 	end,
 
 	-- Footer base
@@ -2674,9 +2714,9 @@ t[#t + 1] = Def.ActorFrame{
 t[#t + 1] = MakeDiffPicker(PLAYER_1)
 t[#t + 1] = MakeDiffPicker(PLAYER_2)
 
--- Side menus (one per player)
-t[#t + 1] = MakeMenu(PLAYER_1)
-t[#t + 1] = MakeMenu(PLAYER_2)
+-- DISABLED: Inline side menus removed in favor of ScreenPlayerOptions
+-- t[#t + 1] = MakeMenu(PLAYER_1)
+-- t[#t + 1] = MakeMenu(PLAYER_2)
 
 -- Song preview actor
 t[#t + 1] = MakePreviewActor()

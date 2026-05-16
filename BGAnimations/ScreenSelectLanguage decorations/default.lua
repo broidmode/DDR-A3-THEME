@@ -84,8 +84,19 @@ local function input(event, param)
 end
 
 t[#t+1] = Def.ActorFrame{
-    InitCommand=function(s) s:Center():queuecommand("Capture") end,
+    InitCommand=function(s)
+        -- Fast intro mode: hide visuals and skip
+        if ThemePrefs.Get("IntroMode") == "fast" then
+            s:visible(false)
+        end
+        s:Center():queuecommand("Capture")
+    end,
     CaptureCommand=function(s)
+        -- Fast intro mode: skip language selection entirely
+        if ThemePrefs.Get("IntroMode") == "fast" then
+            SCREENMAN:GetTopScreen():StartTransitioningScreen("SM_GoToNextScreen")
+            return
+        end
         SOUND:PlayOnce(THEME:GetPathS("","x_frz_expln_soft"))
 		SCREENMAN:GetTopScreen():AddInputCallback(input)
     end,

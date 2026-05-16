@@ -297,7 +297,8 @@ end;
 local t = Def.ActorFrame{
 	InitCommand=function(s)
 		s:sleep(0.5):queuecommand("Add")
-		SCREENMAN:GetTopScreen():SetPrevScreenName("ScreenSelectMusic")
+		-- Removed SetPrevScreenName("ScreenSelectMusic") - it was corrupting the navigation
+		-- stack, causing Back to go to the old wheel menu instead of title screen
 	end,
 	AddCommand=function(s)
 		SCREENMAN:GetTopScreen():AddInputCallback(DiffInputHandler)
