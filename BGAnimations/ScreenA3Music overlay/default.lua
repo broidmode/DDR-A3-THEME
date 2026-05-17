@@ -69,6 +69,9 @@ local PlayingMenuMusic = false -- true when menu BGM is playing (vs song preview
 -- Button state tracking (for simultaneous press detection)
 local ButtonHeld = {}  -- ButtonHeld["MenuUp"] = true/false
 
+-- Folder mode: "category" (group by pack) or "level" (group by chart level)
+local FolderMode = "category"
+
 -- Cursor persistence (survives screen transitions AND game restarts)
 A3MusicCursorState = A3MusicCursorState or {}
 
@@ -210,6 +213,91 @@ local function BuildFlatList()
 	Trace("[ScreenA3Music] BuildFlatList: " .. #FlatList .. " items, " .. #groups .. " groups")
 end
 
+-- Build FlatList grouped by level (any chart at that level)
+-- Level folder entries: {Song, MatchingSteps, levelFolder=true, folderLevel=N}
+-- Each song appears once per level it has a chart for, with only the matching chart
+local function BuildFlatListByLevel()
+	local list = {}
+	local levelBuckets = {}  -- levelBuckets[level] = { {song, steps}, ... }
+	local allLevels = {}     -- track which levels exist
+
+	-- Scan all songs and bucket by level
+	local allSongs = SONGMAN:GetAllSongs()
+	local stType = GAMESTATE:GetCurrentStyle():GetStepsType()
+
+	for _, song in ipairs(allSongs) do
+		local allSteps = song:GetStepsByStepsType(stType)
+		if #allSteps > 0 then
+			-- Add song to each level it has a chart for
+			for _, st in ipairs(allSteps) do
+				local level = st:GetMeter()
+				allLevels[level] = true
+				if not levelBuckets[level] then
+					levelBuckets[level] = {}
+				end
+				-- Store only this specific chart (not all charts)
+				local entry = { song, st }
+				entry.levelFolder = true
+				entry.folderLevel = level
+				levelBuckets[level][#levelBuckets[level]+1] = entry
+			end
+		end
+	end
+
+	-- Sort levels numerically
+	local sortedLevels = {}
+	for level, _ in pairs(allLevels) do
+		sortedLevels[#sortedLevels+1] = level
+	end
+	table.sort(sortedLevels)
+
+	-- Build FlatList with level headers
+	for _, level in ipairs(sortedLevels) do
+		local headerName = "Level " .. tostring(level)
+		list[#list+1] = headerName
+
+		if headerName == OpenGroup then
+			-- Sort songs within level by title
+			local songs = levelBuckets[level]
+			table.sort(songs, function(a, b)
+				return SortKey(a[1]) < SortKey(b[1])
+			end)
+			for _, entry in ipairs(songs) do
+				list[#list+1] = entry
+			end
+		end
+	end
+
+	FlatList = list
+	Cursor = math.min(Cursor, math.max(1, #FlatList))
+	Trace("[ScreenA3Music] BuildFlatListByLevel: " .. #FlatList .. " items, " .. #sortedLevels .. " levels")
+end
+
+-- Rebuild FlatList based on current FolderMode
+local function RebuildFlatList()
+	if FolderMode == "level" then
+		BuildFlatListByLevel()
+	else
+		BuildFlatList()
+	end
+end
+
+-- Toggle between category and level folder modes
+local function ToggleFolderMode()
+	OpenGroup = ""  -- Collapse all when switching modes
+	if FolderMode == "category" then
+		FolderMode = "level"
+		SCREENMAN:SystemMessage("Folder Mode: LEVEL")
+	else
+		FolderMode = "category"
+		SCREENMAN:SystemMessage("Folder Mode: CATEGORY")
+	end
+	RebuildFlatList()
+	if RebuildLayoutCache then RebuildLayoutCache() end
+	Cursor = 1  -- Reset to top
+	SaveCursorState()
+end
+
 -- Cursor persistence functions (defined here because they need IsSong/BuildFlatList)
 SaveCursorState = function()
 	A3MusicCursorState.cursor = Cursor
@@ -224,13 +312,19 @@ SaveCursorState = function()
 	-- Persist to disk for survival across game restarts
 	WritePrefToFile("A3Music_OpenGroup", OpenGroup or "")
 	WritePrefToFile("A3Music_SongDir", A3MusicCursorState.songDir or "")
+	WritePrefToFile("A3Music_FolderMode", FolderMode or "category")
 end
 
 RestoreCursorState = function()
 	local saved = A3MusicCursorState
+	-- Restore folder mode first
+	local savedMode = ReadPrefFromFile("A3Music_FolderMode")
+	if savedMode == "level" or savedMode == "category" then
+		FolderMode = savedMode
+	end
 	if saved.openGroup and saved.openGroup ~= "" then
 		OpenGroup = saved.openGroup
-		BuildFlatList()
+		RebuildFlatList()
 		if RebuildLayoutCache then RebuildLayoutCache() end
 	end
 	if saved.cursor and saved.cursor >= 1 and saved.cursor <= #FlatList then
@@ -254,7 +348,7 @@ local function ToggleGroup(groupName)
 	else
 		OpenGroup = groupName
 	end
-	BuildFlatList()
+	RebuildFlatList()
 	-- Keep cursor on the group header after rebuild
 	for i, item in ipairs(FlatList) do
 		if type(item) == "string" and item == groupName then
@@ -740,17 +834,23 @@ local function UpdateSongCard(actor, entry, isFocused)
 		longInd:visible(song:IsLong() or song:IsMarathon())
 	end
 
-	-- Get current steps for difficulty display
-	-- Use player's preferred difficulty if set, otherwise use first available
+	-- Get steps for difficulty display
 	local pn = GAMESTATE:GetMasterPlayerNumber()
-	local st = GAMESTATE:GetCurrentStyle() and GAMESTATE:GetCurrentStyle():GetStepsType()
-	local prefDiff = GAMESTATE:GetPreferredDifficulty(pn)
 	local steps = nil
-	if prefDiff and st then
-		steps = song:GetOneSteps(st, prefDiff)
-	end
-	if not steps and #entry > 1 then
-		steps = entry[2]  -- Fall back to first steps in entry
+
+	-- Level folder mode: use the specific chart stored in the entry
+	if entry.levelFolder then
+		steps = entry[2]  -- The specific chart matching the folder level
+	else
+		-- Category mode: use player's preferred difficulty if set
+		local st = GAMESTATE:GetCurrentStyle() and GAMESTATE:GetCurrentStyle():GetStepsType()
+		local prefDiff = GAMESTATE:GetPreferredDifficulty(pn)
+		if prefDiff and st then
+			steps = song:GetOneSteps(st, prefDiff)
+		end
+		if not steps and #entry > 1 then
+			steps = entry[2]  -- Fall back to first steps in entry
+		end
 	end
 
 	-- Difficulty display
@@ -982,13 +1082,30 @@ local function ConfirmSong()
 	local entry = FlatList[Cursor]
 	local song = entry[1]
 
+	-- Level folder mode: skip difficulty picker, go directly to gameplay
+	-- The specific chart is already set in the entry and auto-selected on cursor move
+	if entry.levelFolder then
+		local levelSteps = entry[2]
+		GAMESTATE:SetCurrentSong(song)
+		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+			GAMESTATE:SetCurrentSteps(pn, levelSteps)
+			GAMESTATE:SetPreferredDifficulty(pn, levelSteps:GetDifficulty())
+		end
+		SaveCursorState()
+		StopPreview()
+		GAMESTATE:SetCurrentPlayMode("PlayMode_Regular")
+		Accepted = true
+		SOUND:PlayOnce(THEME:GetPathS("Common", "Start"))
+		return
+	end
+
+	-- Category mode: show TwoPartDiff for difficulty selection
 	local stepsArray = {}
 	for i = 2, #entry do
 		stepsArray[#stepsArray + 1] = entry[i]
 	end
 	if #stepsArray == 0 then return end
 
-	-- Always show TwoPartDiff for difficulty selection, even for single-difficulty songs
 	GAMESTATE:SetCurrentSong(song)
 	TwoPartActive = true
 	DiffPickOpen = true  -- Track that we're in difficulty selection (for OptionsClosed handling)
@@ -2317,6 +2434,14 @@ local function InputHandler(event)
 		return true
 	end
 
+	-- Check for simultaneous Left+Right press (toggle folder mode)
+	if (button == "MenuLeft" or button == "MenuRight") and
+	   ButtonHeld["MenuLeft"] and ButtonHeld["MenuRight"] then
+		ToggleFolderMode()
+		SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "sort"))
+		return true
+	end
+
 	-- When PlayerOptions overlay is active, let it handle all input
 	if OptionsActive then
 		return false
@@ -2432,8 +2557,12 @@ local t = Def.ActorFrame{
 			Trace("[ScreenA3Music] Pools initialized: "..#CardPool.." cards, "..#HeaderPool.." headers")
 		end
 
-		-- Build initial data
-		BuildFlatList()
+		-- Restore folder mode first, then build initial data
+		local savedMode = ReadPrefFromFile("A3Music_FolderMode")
+		if savedMode == "level" or savedMode == "category" then
+			FolderMode = savedMode
+		end
+		RebuildFlatList()
 		RebuildLayoutCache()
 
 		-- Restore cursor position from previous visit
@@ -2498,20 +2627,30 @@ local t = Def.ActorFrame{
 		if IsSong(Cursor) then
 			local song = item[1]
 			GAMESTATE:SetCurrentSong(song)
-			-- Set steps for each player (prefer their last difficulty, or first available)
-			local st = GAMESTATE:GetCurrentStyle():GetStepsType()
-			for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
-				local pref = GAMESTATE:GetPreferredDifficulty(pn)
-				local steps = nil
-				if pref then
-					steps = song:GetOneSteps(st, pref)
+
+			-- Level folder mode: auto-select the specific chart stored in the entry
+			if item.levelFolder then
+				local levelSteps = item[2]
+				for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+					GAMESTATE:SetCurrentSteps(pn, levelSteps)
+					GAMESTATE:SetPreferredDifficulty(pn, levelSteps:GetDifficulty())
 				end
-				if not steps then
-					local allSteps = song:GetStepsByStepsType(st)
-					if #allSteps > 0 then steps = allSteps[1] end
-				end
-				if steps then
-					GAMESTATE:SetCurrentSteps(pn, steps)
+			else
+				-- Category mode: prefer player's last difficulty, or first available
+				local st = GAMESTATE:GetCurrentStyle():GetStepsType()
+				for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+					local pref = GAMESTATE:GetPreferredDifficulty(pn)
+					local steps = nil
+					if pref then
+						steps = song:GetOneSteps(st, pref)
+					end
+					if not steps then
+						local allSteps = song:GetStepsByStepsType(st)
+						if #allSteps > 0 then steps = allSteps[1] end
+					end
+					if steps then
+						GAMESTATE:SetCurrentSteps(pn, steps)
+					end
 				end
 			end
 		else
