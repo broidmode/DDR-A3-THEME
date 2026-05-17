@@ -17,6 +17,9 @@ local ThemeDir = THEME:GetCurrentThemeDirectory()
 local sharedPath = ThemeDir .. "Graphics/_shared/"
 local footerPath = ThemeDir .. "Graphics/ScreenWithMenuElements footer/"
 
+-- Special folder name for course mode
+local COURSE_MODE_FOLDER = "COURSE MODE"
+
 -- ============================================================================
 -- STATE
 -- ============================================================================
@@ -46,6 +49,9 @@ local DiffPickIdx = {}    -- per-player cursor index into DiffSteps
 local DiffPickOpen = false
 local Accepted = false    -- prevent double-confirm
 
+-- Level folder difficulty restoration
+local LevelFolderSteps = {}  -- LevelFolderSteps[pn] = steps to restore when backing out of TwoPartDiff
+
 -- Player options overlay state
 local OptionsActive = false  -- true when PlayerOptions overlay is showing
 
@@ -69,6 +75,11 @@ local PlayingMenuMusic = false -- true when menu BGM is playing (vs song preview
 -- Button state tracking (for simultaneous press detection)
 local ButtonHeld = {}  -- ButtonHeld["MenuUp"] = true/false
 
+-- Double-tap tracking for difficulty switching (regular direction buttons)
+local LastTapTime = {}     -- LastTapTime["Up"] = timestamp of last tap
+local LastTapButton = nil  -- which button was last tapped
+local DOUBLE_TAP_WINDOW = 0.35  -- seconds to register a double-tap
+
 -- Folder mode: "category" (group by pack) or "level" (group by chart level)
 local FolderMode = "category"
 
@@ -81,11 +92,17 @@ local function LoadCursorStateFromDisk()
 	A3MusicCursorState._loaded = true
 	local savedGroup = ReadPrefFromFile("A3Music_OpenGroup")
 	local savedSongDir = ReadPrefFromFile("A3Music_SongDir")
+	local savedMode = ReadPrefFromFile("A3Music_FolderMode")
 	if savedGroup and savedGroup ~= "" then
 		A3MusicCursorState.openGroup = savedGroup
 	end
 	if savedSongDir and savedSongDir ~= "" then
 		A3MusicCursorState.songDir = savedSongDir
+	end
+	-- Load folder mode into local variable early so BuildFlatList uses correct mode
+	if savedMode == "level" or savedMode == "category" then
+		FolderMode = savedMode
+		A3MusicCursorState.folderMode = savedMode
 	end
 end
 LoadCursorStateFromDisk()
@@ -184,6 +201,10 @@ end
 -- FlatList entries: string = group header, table = {Song, Steps1, Steps2, ...}
 local function BuildFlatList()
 	local list = {}
+
+	-- Add Course Mode folder at the top
+	list[#list+1] = COURSE_MODE_FOLDER
+
 	local groups = SONGMAN:GetSongGroupNames()
 
 	-- Sort groups in reverse alphabetical order
@@ -218,6 +239,10 @@ end
 -- Each song appears once per level it has a chart for, with only the matching chart
 local function BuildFlatListByLevel()
 	local list = {}
+
+	-- Add Course Mode folder at the top
+	list[#list+1] = COURSE_MODE_FOLDER
+
 	local levelBuckets = {}  -- levelBuckets[level] = { {song, steps}, ... }
 	local allLevels = {}     -- track which levels exist
 
@@ -298,6 +323,67 @@ local function ToggleFolderMode()
 	SaveCursorState()
 end
 
+-- Switch between singles and doubles play style
+local function SwitchStyle(targetStyle)
+	local currentStyle = GAMESTATE:GetCurrentStyle()
+	if not currentStyle then return false end
+	local currentName = currentStyle:GetName()
+	if currentName == "versus" then return false end  -- Can't switch in versus mode
+	if currentName == targetStyle then return false end  -- Already in target style
+
+	setenv("ForceStyle", targetStyle)
+	SCREENMAN:SetNewScreen("ScreenA3Music")
+	return true
+end
+
+-- Cycle difficulty for all enabled players
+local function CycleDifficulty(direction)
+	if not IsSong(Cursor) then return false end
+
+	local entry = FlatList[Cursor]
+	local song = entry[1]
+	local st = GAMESTATE:GetCurrentStyle()
+	if not st then return false end
+	local stepsType = st:GetStepsType()
+	local allSteps = song:GetStepsByStepsType(stepsType)
+	if #allSteps < 2 then return false end  -- Need at least 2 difficulties to cycle
+
+	-- Sort steps by difficulty
+	table.sort(allSteps, function(a, b)
+		return a:GetDifficulty() < b:GetDifficulty()
+	end)
+
+	-- Find current difficulty index and cycle
+	for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+		local current = GAMESTATE:GetCurrentSteps(pn)
+		local currentIdx = 1
+		if current then
+			for i, s in ipairs(allSteps) do
+				if s == current then
+					currentIdx = i
+					break
+				end
+			end
+		end
+
+		local newIdx = currentIdx + direction
+		if newIdx < 1 then newIdx = #allSteps
+		elseif newIdx > #allSteps then newIdx = 1 end
+
+		GAMESTATE:SetCurrentSteps(pn, allSteps[newIdx])
+		GAMESTATE:SetPreferredDifficulty(pn, allSteps[newIdx]:GetDifficulty())
+	end
+
+	MESSAGEMAN:Broadcast("CurrentStepsChanged")
+	return true
+end
+
+-- Go to course select screen
+local function GoToCourseMode()
+	GAMESTATE:ApplyGameCommand("playmode,nonstop")
+	SCREENMAN:SetNewScreen("ScreenSelectCourse")
+end
+
 -- Cursor persistence functions (defined here because they need IsSong/BuildFlatList)
 SaveCursorState = function()
 	A3MusicCursorState.cursor = Cursor
@@ -343,6 +429,13 @@ end
 
 -- Toggle a group open/closed
 local function ToggleGroup(groupName)
+	-- Special case: Course Mode folder navigates to ScreenSelectCourse
+	if groupName == COURSE_MODE_FOLDER then
+		-- Don't stop preview here - let screen transition fade it naturally
+		GoToCourseMode()
+		return
+	end
+
 	if OpenGroup == groupName then
 		OpenGroup = ""
 	else
@@ -1082,24 +1175,20 @@ local function ConfirmSong()
 	local entry = FlatList[Cursor]
 	local song = entry[1]
 
-	-- Level folder mode: skip difficulty picker, go directly to gameplay
-	-- The specific chart is already set in the entry and auto-selected on cursor move
+	-- Level folder mode: store the level-preferred steps for restoration on back-out
+	-- Still open TwoPartDiff so user can change difficulty if desired
 	if entry.levelFolder then
 		local levelSteps = entry[2]
-		GAMESTATE:SetCurrentSong(song)
 		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
-			GAMESTATE:SetCurrentSteps(pn, levelSteps)
-			GAMESTATE:SetPreferredDifficulty(pn, levelSteps:GetDifficulty())
+			LevelFolderSteps[pn] = levelSteps
 		end
-		SaveCursorState()
-		StopPreview()
-		GAMESTATE:SetCurrentPlayMode("PlayMode_Regular")
-		Accepted = true
-		SOUND:PlayOnce(THEME:GetPathS("Common", "Start"))
-		return
+	else
+		-- Category mode: clear level folder steps
+		LevelFolderSteps[PLAYER_1] = nil
+		LevelFolderSteps[PLAYER_2] = nil
 	end
 
-	-- Category mode: show TwoPartDiff for difficulty selection
+	-- Open TwoPartDiff for difficulty selection (both modes)
 	local stepsArray = {}
 	for i = 2, #entry do
 		stepsArray[#stepsArray + 1] = entry[i]
@@ -1141,6 +1230,19 @@ local function OnSongUnchosen()
 	DiffPickOpen = false  -- No longer in difficulty selection
 	TwoPartConfirmed[PLAYER_1] = false
 	TwoPartConfirmed[PLAYER_2] = false
+
+	-- Restore level folder steps if backing out in level mode
+	if FolderMode == "level" then
+		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+			local levelSteps = LevelFolderSteps[pn]
+			if levelSteps then
+				GAMESTATE:SetCurrentSteps(pn, levelSteps)
+				GAMESTATE:SetPreferredDifficulty(pn, levelSteps:GetDifficulty())
+			end
+		end
+	end
+	LevelFolderSteps[PLAYER_1] = nil
+	LevelFolderSteps[PLAYER_2] = nil
 end
 
 -- Factory: Create difficulty picker for a player (fallback, TwoPartDiff is primary)
@@ -2427,14 +2529,53 @@ local function InputHandler(event)
 	local pn = event.PlayerNumber
 	if not pn then return false end
 
-	-- Check for simultaneous Up+Down press (jump to folder header)
+	-- Check for Down+Left/Down+Right (singles/doubles switching)
+	-- Uses regular direction buttons, not menu buttons
+	local downHeld = ButtonHeld["Down"]
+	local leftHeld = ButtonHeld["Left"]
+	local rightHeld = ButtonHeld["Right"]
+
+	if downHeld and rightHeld then
+		if SwitchStyle("double") then
+			SOUND:PlayOnce(THEME:GetPathS("Common", "start"))
+		end
+		return true
+	elseif downHeld and leftHeld then
+		if SwitchStyle("single") then
+			SOUND:PlayOnce(THEME:GetPathS("Common", "start"))
+		end
+		return true
+	end
+
+	-- Check for double-tap Up/Down (regular direction buttons) to cycle difficulty
+	if button == "Up" or button == "Down" then
+		local now = GetTimeSinceStart and GetTimeSinceStart() or os.clock()
+		local lastTime = LastTapTime[button] or 0
+
+		if LastTapButton == button and (now - lastTime) < DOUBLE_TAP_WINDOW then
+			-- Double tap detected!
+			local direction = (button == "Up") and -1 or 1
+			if CycleDifficulty(direction) then
+				SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
+			end
+			LastTapButton = nil
+			LastTapTime[button] = 0
+			return true
+		else
+			-- First tap - record it
+			LastTapButton = button
+			LastTapTime[button] = now
+		end
+	end
+
+	-- Check for simultaneous MenuUp+MenuDown press (jump to folder header)
 	if (button == "MenuUp" or button == "MenuDown") and
 	   ButtonHeld["MenuUp"] and ButtonHeld["MenuDown"] then
 		JumpToFolderHeader()
 		return true
 	end
 
-	-- Check for simultaneous Left+Right press (toggle folder mode)
+	-- Check for simultaneous MenuLeft+MenuRight press (toggle folder mode)
 	if (button == "MenuLeft" or button == "MenuRight") and
 	   ButtonHeld["MenuLeft"] and ButtonHeld["MenuRight"] then
 		ToggleFolderMode()
