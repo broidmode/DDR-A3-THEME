@@ -83,6 +83,10 @@ local DOUBLE_TAP_WINDOW = 0.35  -- seconds to register a double-tap
 -- Folder mode: "category" (group by pack) or "level" (group by chart level)
 local FolderMode = "category"
 
+-- Panel mode: cycles through ClosePanes -> OpenPanes1 -> OpenPanes3
+local PanelModes = {"ClosePanes", "OpenPanes1", "OpenPanes3"}
+local PanelModeIdx = 3  -- Start with OpenPanes3 (scores visible)
+
 -- Cursor persistence (survives screen transitions AND game restarts)
 A3MusicCursorState = A3MusicCursorState or {}
 
@@ -2648,6 +2652,18 @@ local function InputHandler(event)
 		return true
 	end
 
+	-- Check for simultaneous Up+Left pad press (cycle panel mode)
+	if (padButton == "Up" or padButton == "Left") and
+	   ButtonHeld["Up"] and ButtonHeld["Left"] then
+		PanelModeIdx = (PanelModeIdx % #PanelModes) + 1
+		local mode = PanelModes[PanelModeIdx]
+		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+			MESSAGEMAN:Broadcast("Code", {PlayerNumber = pn, Name = mode})
+		end
+		SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "sort"))
+		return true
+	end
+
 	-- When PlayerOptions overlay is active, let it handle all input
 	if OptionsActive then
 		return false
@@ -2755,6 +2771,11 @@ local t = Def.ActorFrame{
 			GAMESTATE:SetCurrentStyle(storedStyle)
 			setenv("ForceStyle", nil)
 			Trace("[ScreenA3Music] Applied ForceStyle: " .. storedStyle)
+		end
+
+		-- Show score panels by default (no toggle needed in this screen)
+		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+			MESSAGEMAN:Broadcast("Code", {PlayerNumber = pn, Name = "OpenPanes3"})
 		end
 
 		-- Store reference to pool root
