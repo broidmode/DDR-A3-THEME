@@ -336,6 +336,16 @@ local function SwitchStyle(targetStyle)
 	return true
 end
 
+-- Difficulty ordering (GetDifficulty returns strings, so we need numeric lookup)
+local DifficultyOrder = {
+	Difficulty_Beginner  = 1,
+	Difficulty_Easy      = 2,
+	Difficulty_Medium    = 3,
+	Difficulty_Hard      = 4,
+	Difficulty_Challenge = 5,
+	Difficulty_Edit      = 6,
+}
+
 -- Cycle difficulty for all enabled players
 local function CycleDifficulty(direction)
 	if not IsSong(Cursor) then return false end
@@ -348,9 +358,11 @@ local function CycleDifficulty(direction)
 	local allSteps = song:GetStepsByStepsType(stepsType)
 	if #allSteps < 2 then return false end  -- Need at least 2 difficulties to cycle
 
-	-- Sort steps by difficulty
+	-- Sort steps by difficulty (using numeric lookup, not string comparison)
 	table.sort(allSteps, function(a, b)
-		return a:GetDifficulty() < b:GetDifficulty()
+		local aOrder = DifficultyOrder[a:GetDifficulty()] or 99
+		local bOrder = DifficultyOrder[b:GetDifficulty()] or 99
+		return aOrder < bOrder
 	end)
 
 	-- Find current difficulty index and cycle
@@ -2564,14 +2576,16 @@ end
 
 local function InputHandler(event)
 	local button = event.GameButton
-	if not button then return false end
+	local padButton = event.button  -- Raw pad button (Up, Down, Left, Right, etc.)
 
-	-- Track button held state
+	-- Track button held state for both GameButton and raw pad button
 	if event.type == "InputEventType_Release" then
-		ButtonHeld[button] = false
+		if button then ButtonHeld[button] = false end
+		if padButton then ButtonHeld[padButton] = false end
 		return false
 	end
-	ButtonHeld[button] = true
+	if button then ButtonHeld[button] = true end
+	if padButton then ButtonHeld[padButton] = true end
 
 	if Accepted then return true end
 
@@ -2579,7 +2593,7 @@ local function InputHandler(event)
 	if not pn then return false end
 
 	-- Check for Down+Left/Down+Right (singles/doubles switching)
-	-- Uses regular direction buttons, not menu buttons
+	-- Uses raw pad buttons from event.button, not GameButton
 	local downHeld = ButtonHeld["Down"]
 	local leftHeld = ButtonHeld["Left"]
 	local rightHeld = ButtonHeld["Right"]
@@ -2596,25 +2610,27 @@ local function InputHandler(event)
 		return true
 	end
 
-	-- Check for double-tap Up/Down (regular direction buttons) to cycle difficulty
-	if button == "Up" or button == "Down" then
+	-- Check for double-tap Up/Down (raw pad buttons) to cycle difficulty
+	-- Block both taps to prevent menu navigation interference
+	if padButton == "Up" or padButton == "Down" then
 		local now = GetTimeSinceStart and GetTimeSinceStart() or os.clock()
-		local lastTime = LastTapTime[button] or 0
+		local lastTime = LastTapTime[padButton] or 0
 
-		if LastTapButton == button and (now - lastTime) < DOUBLE_TAP_WINDOW then
-			-- Double tap detected!
-			local direction = (button == "Up") and -1 or 1
+		if LastTapButton == padButton and (now - lastTime) < DOUBLE_TAP_WINDOW then
+			-- Double tap detected - cycle difficulty
+			local direction = (padButton == "Up") and -1 or 1
 			if CycleDifficulty(direction) then
 				SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
 			end
 			LastTapButton = nil
-			LastTapTime[button] = 0
-			return true
+			LastTapTime[padButton] = 0
 		else
-			-- First tap - record it
-			LastTapButton = button
-			LastTapTime[button] = now
+			-- First tap - record it for potential double-tap
+			LastTapButton = padButton
+			LastTapTime[padButton] = now
 		end
+		-- Always consume pad Up/Down to prevent menu nav side effects
+		return true
 	end
 
 	-- Check for simultaneous MenuUp+MenuDown press (jump to folder header)
@@ -2732,6 +2748,14 @@ local t = Def.ActorFrame{
 
 	OnCommand = function(self)
 		Trace("[ScreenA3Music] Screen loaded successfully!")
+
+		-- Apply ForceStyle if set (from Down+Left/Right style switching)
+		local storedStyle = getenv("ForceStyle")
+		if storedStyle then
+			GAMESTATE:SetCurrentStyle(storedStyle)
+			setenv("ForceStyle", nil)
+			Trace("[ScreenA3Music] Applied ForceStyle: " .. storedStyle)
+		end
 
 		-- Store reference to pool root
 		PoolRoot = self:GetChild("PoolRoot")
