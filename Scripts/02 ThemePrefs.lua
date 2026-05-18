@@ -1,12 +1,14 @@
 -- sm-ssc Default Theme Preferences Handler
 
 local Prefs = {
-	-- Music select sorting — two-letter codes set first/last priority
-	-- L = Latin, J = Japanese, N = Numbers. Unlisted fills middle.
+	-- Music select sorting — controls song order within groups
+	-- Romaji: alphabetical by transliteration (most rhythm games)
+	-- DDR A3: Japanese → Latin → Numbers (arcade DDR A3)
+	-- DDR WORLD: Latin → Numbers → Japanese (arcade DDR WORLD)
 	JapaneseSorting = {
-		Default = "nl",
-		Choices = { "J,N,L", "L,N,J", "J,L,N", "N,L,J", "L,J,N", "N,J,L", "Romaji" },
-		Values  = { "jl",   "lj",    "jn",    "nj",    "ln",    "nl",    "romaji" },
+		Default = "romaji",
+		Choices = { "Romaji", "DDR A3", "DDR WORLD" },
+		Values  = { "romaji", "jn",     "ln" },
 	},
 	-- Music select jacket loading quality
 	JacketQuality = {

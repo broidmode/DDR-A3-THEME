@@ -884,4 +884,37 @@ function OptionRowIntroMode()
 	return t;
 end
 
+function OptionRowSongSorting()
+	local t = {
+		Name = "SongSorting";
+		LayoutType = "ShowAllInRow";
+		SelectType = "SelectOne";
+		OneChoiceForAllPlayers = true;
+		ExportOnChange = false;
+		Choices = {"Romaji", "DDR A3", "DDR WORLD"};
+		LoadSelections = function(self, list, pn)
+			local pref = ThemePrefs.Get("JapaneseSorting")
+			if pref == "jn" then
+				list[2] = true
+			elseif pref == "ln" then
+				list[3] = true
+			else
+				list[1] = true
+			end
+		end;
+		SaveSelections = function(self, list, pn)
+			if list[2] then
+				ThemePrefs.Set("JapaneseSorting", "jn")
+			elseif list[3] then
+				ThemePrefs.Set("JapaneseSorting", "ln")
+			else
+				ThemePrefs.Set("JapaneseSorting", "romaji")
+			end
+			ThemePrefs.Save()
+		end;
+	};
+	setmetatable(t, t);
+	return t;
+end
+
 --Code by Midflight Digital
