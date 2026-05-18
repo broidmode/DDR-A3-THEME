@@ -266,7 +266,13 @@ local keyset = {
 	[PLAYER_2] = 0
 }
 
+-- Track when PlayerOptions overlay is active
+local optionsOpen = false
+
 local function DiffInputHandler(event)
+	-- Block all input when PlayerOptions is open
+	if optionsOpen then return false end
+
 	local pn= event.PlayerNumber
 	local button = event.button
 	if event.type == "InputEventType_Release" then return end
@@ -308,6 +314,13 @@ local t = Def.ActorFrame{
 	OffCommand=function(s)
 		SCREENMAN:GetTopScreen():RemoveInputCallback(DiffInputHandler)
 		s:sleep(outdelay):diffusealpha(1):sleep(0.05):diffusealpha(0):sleep(0.05):diffusealpha(0.5):sleep(0.05):diffusealpha(0):sleep(0.05):diffusealpha(0.25):sleep(0.05):linear(0.05):diffusealpha(0)
+	end,
+	-- Block input when PlayerOptions overlay is shown
+	StartSelectingOptionsMessageCommand=function(s)
+		optionsOpen = true
+	end,
+	OptionsClosedMessageCommand=function(s)
+		optionsOpen = false
 	end,
 	genScrollerFrame(PLAYER_1)..{
 		Condition=GAMESTATE:IsSideJoined(PLAYER_1);
