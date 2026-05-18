@@ -2596,6 +2596,11 @@ local function InputHandler(event)
 	local pn = event.PlayerNumber
 	if not pn then return false end
 
+	-- When PlayerOptions overlay is active, block all other input
+	if OptionsActive then
+		return false
+	end
+
 	-- Check for Down+Left/Down+Right (singles/doubles switching)
 	-- Uses raw pad buttons from event.button, not GameButton
 	local downHeld = ButtonHeld["Down"]
@@ -2662,11 +2667,6 @@ local function InputHandler(event)
 		end
 		SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "sort"))
 		return true
-	end
-
-	-- When PlayerOptions overlay is active, let it handle all input
-	if OptionsActive then
-		return false
 	end
 
 	-- When TwoPartDiff is active, let it handle input (except Back/Select)
