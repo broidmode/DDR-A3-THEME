@@ -131,7 +131,7 @@ local function genScrollerFrame(player)
 					OutCommand=function(s)
 						if i == selection[player] then
 							s:sleep(0.3):diffusealpha(1):playcommand("Animate")
-						
+
 						end
 					end,
 				};
@@ -142,7 +142,7 @@ local function genScrollerFrame(player)
 					OutCommand=function(s)
 						if i == selection[player] then
 							s:sleep(0.4):diffusealpha(1):playcommand("Animate")
-						
+
 						end
 					end,
 				};
@@ -251,10 +251,10 @@ local function genScrollerFrame(player)
 				Def.Sprite{ Texture=THEME:GetPathB("ScreenSelectMusic","overlay/ShockArrows/eff"),
 					InitCommand=function(s) s:xy(143,46):zoom(0.767):diffuseshift()
 						s:effectcolor1(color("1,1,1,1")):effectcolor2(color("1,1,1,0.8"))
-						s:effectperiod(0.15) 
+						s:effectperiod(0.15)
 					end,
 				};
-				
+
 			};
 		};
 	end;
@@ -297,15 +297,13 @@ end;
 local t = Def.ActorFrame{
 	InitCommand=function(s)
 		s:sleep(0.5):queuecommand("Add")
-		-- Removed SetPrevScreenName("ScreenSelectMusic") - it was corrupting the navigation
-		-- stack, causing Back to go to the old wheel menu instead of title screen
 	end,
 	AddCommand=function(s)
 		SCREENMAN:GetTopScreen():AddInputCallback(DiffInputHandler)
 	end,
-	SongUnchosenMessageCommand=function(s) 
-		SCREENMAN:GetTopScreen():RemoveInputCallback(DiffInputHandler) 
-		s:sleep(0.1):linear(0.2):diffusealpha(0) 
+	SongUnchosenMessageCommand=function(s)
+		SCREENMAN:GetTopScreen():RemoveInputCallback(DiffInputHandler)
+		s:sleep(0.1):linear(0.2):diffusealpha(0)
 	end,
 	OffCommand=function(s)
 		SCREENMAN:GetTopScreen():RemoveInputCallback(DiffInputHandler)

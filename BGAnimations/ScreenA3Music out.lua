@@ -1,7 +1,4 @@
-local t = Def.ActorFrame {};
-
-t[#t+1] = loadfile(THEME:GetPathB("","_normaldoors"))()..{
-	StartTransitioningCommand=function(s) s:playcommand("AnimClose") end,
+-- Match ScreenSelectMusic out - no door animation, just sleep for transition
+return Def.ActorFrame{
+	StartTransitioningCommand=function(s) s:sleep(2) end,
 };
-
-return t;

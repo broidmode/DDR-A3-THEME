@@ -5,8 +5,11 @@ t[#t+1] = Def.ActorFrame{
 	PlayCommand=function(s) SOUND:PlayOnce(THEME:GetPathS("ScreenSelectMusic","swoosh")) end,
 };
 
-t[#t+1] = loadfile(THEME:GetPathB("","_normaldoors"))()..{
-	StartTransitioningCommand=function(s) s:playcommand("AnimOpen") end,
-};
+-- Door animation only on first stage (matches ScreenSelectMusic/ScreenA3Music pattern)
+if(GAMESTATE:GetCurrentStage()=='Stage_1st') or GAMESTATE:GetCurrentStageIndex()==0 then
+	t[#t+1] = loadfile(THEME:GetPathB("","_normaldoors"))()..{
+		StartTransitioningCommand=function(s) s:playcommand("AnimOpen") end,
+	};
+end;
 
 return t;

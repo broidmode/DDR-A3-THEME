@@ -1171,9 +1171,11 @@ local TwoPartConfirmed = {
 local TwoPartActive = false
 
 local function ConfirmSong()
+	Trace("[A3Music] ConfirmSong() called - Accepted=" .. tostring(Accepted) .. " IsSong=" .. tostring(IsSong(Cursor)))
 	if Accepted or not IsSong(Cursor) then return end
 	local entry = FlatList[Cursor]
 	local song = entry[1]
+	Trace("[A3Music] ConfirmSong: song=" .. song:GetDisplayMainTitle())
 
 	-- Level folder mode: store the level-preferred steps for restoration on back-out
 	-- Still open TwoPartDiff so user can change difficulty if desired
@@ -1195,12 +1197,26 @@ local function ConfirmSong()
 	end
 	if #stepsArray == 0 then return end
 
-	GAMESTATE:SetCurrentSong(song)
+	-- Set flags BEFORE SetCurrentSong to prevent audio glitches from triggered messages
+	Trace("[A3Music] ConfirmSong: Setting TwoPartActive=true BEFORE SetCurrentSong")
 	TwoPartActive = true
 	DiffPickOpen = true  -- Track that we're in difficulty selection (for OptionsClosed handling)
 	TwoPartConfirmed[PLAYER_1] = false
 	TwoPartConfirmed[PLAYER_2] = false
+
+	local currentSong = GAMESTATE:GetCurrentSong()
+	Trace("[A3Music] ConfirmSong: currentSong=" .. tostring(currentSong and currentSong:GetDisplayMainTitle() or "nil"))
+	-- Only set song if not already set (avoids audio glitch)
+	if currentSong ~= song then
+		Trace("[A3Music] ConfirmSong: Calling SetCurrentSong...")
+		GAMESTATE:SetCurrentSong(song)
+		Trace("[A3Music] ConfirmSong: SetCurrentSong returned")
+	else
+		Trace("[A3Music] ConfirmSong: Song already set, skipping SetCurrentSong")
+	end
+	Trace("[A3Music] ConfirmSong: Broadcasting StartSelectingSteps")
 	MESSAGEMAN:Broadcast("StartSelectingSteps")
+	Trace("[A3Music] ConfirmSong: Done")
 end
 
 local function OnTwoPartConfirm(pn)
@@ -1975,44 +1991,68 @@ end
 -- SONG PREVIEW (Stage 9)
 -- ============================================================================
 
-StopPreview = function()
+StopPreview = function(instant)
+	Trace("[A3Music] StopPreview() called - instant=" .. tostring(instant) .. " PreviewGen was " .. PreviewGen)
+	Trace("[A3Music] StopPreview stack: " .. debug.traceback())
 	PreviewGen = PreviewGen + 1
 	CurrentPreviewPath = nil
 	PlayingMenuMusic = false
-	SOUND:StopMusic()
+	if instant then
+		Trace("[A3Music] StopPreview: Calling SOUND:StopMusic()")
+		SOUND:StopMusic()
+	else
+		Trace("[A3Music] StopPreview: Calling SOUND:DimMusic(0, 0.3)")
+		SOUND:DimMusic(0, 0.3)
+	end
 end
 
 local function PlayMenuMusic()
-	if PlayingMenuMusic then return end
+	Trace("[A3Music] PlayMenuMusic() called - PlayingMenuMusic=" .. tostring(PlayingMenuMusic) .. " TwoPartActive=" .. tostring(TwoPartActive))
+	if PlayingMenuMusic then
+		Trace("[A3Music] PlayMenuMusic: Already playing, skipping")
+		return
+	end
 	-- Resolve path lazily on first use
 	if not MENU_MUSIC_PATH then
 		-- Try GetPathS first, fall back to direct path
 		MENU_MUSIC_PATH = THEME:GetPathS("ScreenSelectMusic", "music (loop)")
-		Trace("[ScreenA3Music] GetPathS result: " .. tostring(MENU_MUSIC_PATH))
+		Trace("[A3Music] GetPathS result: " .. tostring(MENU_MUSIC_PATH))
 		if not MENU_MUSIC_PATH or MENU_MUSIC_PATH == "" then
 			-- Direct path to the actual ogg file
 			MENU_MUSIC_PATH = THEME:GetCurrentThemeDirectory() .. "Sounds/02 - SelectMusic (loop).ogg"
-			Trace("[ScreenA3Music] Using fallback path: " .. tostring(MENU_MUSIC_PATH))
+			Trace("[A3Music] Using fallback path: " .. tostring(MENU_MUSIC_PATH))
 		end
 	end
 	if not MENU_MUSIC_PATH or MENU_MUSIC_PATH == "" then
-		Trace("[ScreenA3Music] ERROR: No menu music path!")
+		Trace("[A3Music] ERROR: No menu music path!")
 		return
 	end
 	CurrentPreviewPath = nil
 	PlayingMenuMusic = true
-	Trace("[ScreenA3Music] Playing menu music: " .. MENU_MUSIC_PATH)
+	Trace("[A3Music] CALLING PlayMusicPart for menu music: " .. MENU_MUSIC_PATH)
 	-- Use large length (300s) since we're looping - length=0 may mean "don't play"
 	SOUND:PlayMusicPart(MENU_MUSIC_PATH, 0, 300, 0.5, 0.5, true, false, false)
 end
 
 local function StartPreview()
+	Trace("[A3Music] StartPreview() called - TwoPartActive=" .. tostring(TwoPartActive) .. " PreviewGen=" .. PreviewGen)
+	Trace("[A3Music] StartPreview stack: " .. debug.traceback())
+	-- Don't restart preview during difficulty selection (TwoPartDiff)
+	if TwoPartActive then
+		Trace("[A3Music] StartPreview: BLOCKED by TwoPartActive")
+		return
+	end
+
 	PreviewGen = PreviewGen + 1
+	Trace("[A3Music] StartPreview: new PreviewGen=" .. PreviewGen)
 	if PreviewActor then
 		PreviewActor:stoptweening()
 		PreviewActor:sleep(PREVIEW_DELAY)
 		PreviewActor:queuecommand("DoPreview")
 		PreviewActor._gen = PreviewGen
+		Trace("[A3Music] StartPreview: queued DoPreview with gen=" .. PreviewGen)
+	else
+		Trace("[A3Music] StartPreview: PreviewActor is nil!")
 	end
 end
 
@@ -2025,9 +2065,16 @@ local function MakePreviewActor()
 			self._gen = 0
 		end,
 		DoPreviewCommand = function(self)
+			Trace("[A3Music] DoPreviewCommand called - self._gen=" .. tostring(self._gen) .. " PreviewGen=" .. PreviewGen .. " TwoPartActive=" .. tostring(TwoPartActive))
 			-- Check generation to cancel stale previews
 			if self._gen ~= PreviewGen then
-				Trace("[ScreenA3Music] Preview cancelled (gen mismatch: " .. self._gen .. " vs " .. PreviewGen .. ")")
+				Trace("[A3Music] Preview cancelled (gen mismatch: " .. self._gen .. " vs " .. PreviewGen .. ")")
+				return
+			end
+
+			-- Extra guard: don't play if TwoPartDiff is active
+			if TwoPartActive then
+				Trace("[A3Music] DoPreviewCommand BLOCKED - TwoPartActive is true")
 				return
 			end
 
@@ -2040,15 +2087,16 @@ local function MakePreviewActor()
 
 			if song then
 				local path = song:GetPreviewMusicPath()
+				Trace("[A3Music] DoPreview: song=" .. song:GetDisplayMainTitle() .. " path=" .. tostring(path))
 				if path and path ~= "" then
 					-- Skip if already playing this file
 					if path == CurrentPreviewPath then
-						Trace("[ScreenA3Music] Already playing: " .. path)
+						Trace("[A3Music] Already playing this path, skipping")
 						return
 					end
 					CurrentPreviewPath = path
 					PlayingMenuMusic = false
-					Trace("[ScreenA3Music] Playing song preview: " .. path)
+					Trace("[A3Music] CALLING PlayMusicPart for: " .. path)
 					SOUND:PlayMusicPart(
 						path,
 						song:GetSampleStart(),
@@ -2059,17 +2107,18 @@ local function MakePreviewActor()
 						false,-- applyRate
 						false -- alignBeat
 					)
+					Trace("[A3Music] PlayMusicPart returned")
 				else
-					Trace("[ScreenA3Music] Song has no preview path")
+					Trace("[A3Music] Song has no preview path")
 				end
 			else
 				-- On a group header - play menu music
-				Trace("[ScreenA3Music] On group header, playing menu music")
+				Trace("[A3Music] On group header, playing menu music")
 				PlayMenuMusic()
 			end
 		end,
 		OffCommand = function(self)
-			StopPreview()
+			-- Don't stop preview - let engine handle music fade during screen transition
 		end,
 	}
 end
@@ -2724,7 +2773,7 @@ local t = Def.ActorFrame{
 
 	OffCommand = function(self)
 		self:finishtweening()
-		StopPreview()
+		-- Don't stop preview here - let engine handle music fade during screen transition
 	end,
 
 	-- TwoPartDiff confirmation messages
@@ -2761,12 +2810,14 @@ local t = Def.ActorFrame{
 	TwoDiffRightPlayerNumber_P2MessageCommand = function(self) Refresh() end,
 
 	CursorChangedMessageCommand = function(self)
+		Trace("[A3Music] CursorChangedMessageCommand - TwoPartActive=" .. tostring(TwoPartActive) .. " Cursor=" .. Cursor)
 		Refresh()
 
 		-- Set GAMESTATE current song/steps so original overlay components receive messages
 		local item = FlatList[Cursor]
 		if IsSong(Cursor) then
 			local song = item[1]
+			Trace("[A3Music] CursorChanged: Calling SetCurrentSong for " .. song:GetDisplayMainTitle())
 			GAMESTATE:SetCurrentSong(song)
 
 			-- Level folder mode: auto-select the specific chart stored in the entry
