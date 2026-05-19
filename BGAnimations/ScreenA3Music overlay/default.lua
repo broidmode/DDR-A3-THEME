@@ -2620,23 +2620,25 @@ local function InputHandler(event)
 	end
 
 	-- Check for double-tap Up/Down (raw pad buttons) to cycle difficulty
-	-- Block both taps to prevent menu navigation interference
+	-- Only process FirstPress events (ignore Repeat from held buttons)
 	if padButton == "Up" or padButton == "Down" then
-		local now = GetTimeSinceStart and GetTimeSinceStart() or os.clock()
-		local lastTime = LastTapTime[padButton] or 0
+		if event.type == "InputEventType_FirstPress" then
+			local now = GetTimeSinceStart and GetTimeSinceStart() or os.clock()
+			local lastTime = LastTapTime[padButton] or 0
 
-		if LastTapButton == padButton and (now - lastTime) < DOUBLE_TAP_WINDOW then
-			-- Double tap detected - cycle difficulty
-			local direction = (padButton == "Up") and -1 or 1
-			if CycleDifficulty(direction) then
-				SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
+			if LastTapButton == padButton and (now - lastTime) < DOUBLE_TAP_WINDOW then
+				-- Double tap detected - cycle difficulty
+				local direction = (padButton == "Up") and -1 or 1
+				if CycleDifficulty(direction) then
+					SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "change"))
+				end
+				LastTapButton = nil
+				LastTapTime[padButton] = 0
+			else
+				-- First tap - record it for potential double-tap
+				LastTapButton = padButton
+				LastTapTime[padButton] = now
 			end
-			LastTapButton = nil
-			LastTapTime[padButton] = 0
-		else
-			-- First tap - record it for potential double-tap
-			LastTapButton = padButton
-			LastTapTime[padButton] = now
 		end
 		-- Always consume pad Up/Down to prevent menu nav side effects
 		return true
