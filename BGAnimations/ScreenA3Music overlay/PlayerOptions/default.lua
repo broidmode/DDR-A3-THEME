@@ -742,7 +742,7 @@ local function OptionsInputHandler(event)
 
 	if button == "MenuUp" or button == "Up" then
 		if currentRow[pn] > 1 then
-			SOUND:PlayOnce(THEME:GetPathS("", "ScreenSelectMusic difficulty harder"))
+			SOUND:PlayOnce(THEME:GetPathS("ScreenOptions", "next"))
 			currentRow[pn] = currentRow[pn] - 1
 			RefreshFocus(pn)
 		end
@@ -750,7 +750,7 @@ local function OptionsInputHandler(event)
 
 	elseif button == "MenuDown" or button == "Down" then
 		if currentRow[pn] < #optionRows then
-			SOUND:PlayOnce(THEME:GetPathS("", "ScreenSelectMusic difficulty harder"))
+			SOUND:PlayOnce(THEME:GetPathS("ScreenOptions", "next"))
 			currentRow[pn] = currentRow[pn] + 1
 			RefreshFocus(pn)
 		end
@@ -758,7 +758,7 @@ local function OptionsInputHandler(event)
 
 	elseif button == "MenuLeft" or button == "Left" then
 		if row and row.selected > 1 then
-			SOUND:PlayOnce(THEME:GetPathS("_MusicWheel", "Change"))
+			SOUND:PlayOnce(THEME:GetPathS("ScreenOptions", "change"))
 			row.selected = row.selected - 1
 			row.setValue(row.selected)
 			RefreshRow(pn, currentRow[pn])
@@ -767,7 +767,7 @@ local function OptionsInputHandler(event)
 
 	elseif button == "MenuRight" or button == "Right" then
 		if row and row.selected < #row.choices then
-			SOUND:PlayOnce(THEME:GetPathS("_MusicWheel", "Change"))
+			SOUND:PlayOnce(THEME:GetPathS("ScreenOptions", "change"))
 			row.selected = row.selected + 1
 			row.setValue(row.selected)
 			RefreshRow(pn, currentRow[pn])
@@ -776,7 +776,7 @@ local function OptionsInputHandler(event)
 
 	elseif button == "Start" or button == "Select" or button == "Back" then
 		-- Close options for this player
-		SOUND:PlayOnce(THEME:GetPathS("Common", "Start"))
+		SOUND:PlayOnce(THEME:GetPathS("ScreenSelectMusic", "swoosh"))
 		optionsClosed[pn] = true
 		MESSAGEMAN:Broadcast("OptionsConfirmed"..pn)
 

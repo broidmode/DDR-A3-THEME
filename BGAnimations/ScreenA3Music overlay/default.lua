@@ -85,7 +85,7 @@ local FolderMode = "category"
 
 -- Panel mode: cycles through ClosePanes -> OpenPanes1 -> OpenPanes3
 local PanelModes = {"ClosePanes", "OpenPanes1", "OpenPanes3"}
-local PanelModeIdx = 3  -- Start with OpenPanes3 (scores visible)
+local PanelModeIdx = 1  -- Default to ClosePanes (hints visible)
 
 -- Cursor persistence (survives screen transitions AND game restarts)
 A3MusicCursorState = A3MusicCursorState or {}
@@ -107,6 +107,14 @@ local function LoadCursorStateFromDisk()
 	if savedMode == "level" or savedMode == "category" then
 		FolderMode = savedMode
 		A3MusicCursorState.folderMode = savedMode
+	end
+	-- Load panel mode (ClosePanes=1, OpenPanes1=2, OpenPanes3=3)
+	local savedPanelMode = ReadPrefFromFile("A3Music_PanelMode")
+	if savedPanelMode then
+		local idx = tonumber(savedPanelMode)
+		if idx and idx >= 1 and idx <= #PanelModes then
+			PanelModeIdx = idx
+		end
 	end
 end
 LoadCursorStateFromDisk()
@@ -1231,6 +1239,7 @@ local function ConfirmSong()
 		Trace("[A3Music] ConfirmSong: Song already set, skipping SetCurrentSong")
 	end
 	Trace("[A3Music] ConfirmSong: Broadcasting StartSelectingSteps")
+	SOUND:PlayOnce(THEME:GetPathS("Common", "start"))
 	MESSAGEMAN:Broadcast("StartSelectingSteps")
 	Trace("[A3Music] ConfirmSong: Done")
 end
@@ -1249,7 +1258,7 @@ local function OnTwoPartConfirm(pn)
 
 	if allConfirmed and not Accepted then
 		SaveCursorState()
-		StopPreview()
+		-- Don't call StopPreview() here - engine handles music fade during screen transition
 		GAMESTATE:SetCurrentPlayMode("PlayMode_Regular")
 		Accepted = true
 		TwoPartActive = false
@@ -2008,18 +2017,14 @@ end
 -- ============================================================================
 
 StopPreview = function(instant)
-	Trace("[A3Music] StopPreview() called - instant=" .. tostring(instant) .. " PreviewGen was " .. PreviewGen)
-	Trace("[A3Music] StopPreview stack: " .. debug.traceback())
 	PreviewGen = PreviewGen + 1
 	CurrentPreviewPath = nil
 	PlayingMenuMusic = false
 	if instant then
-		Trace("[A3Music] StopPreview: Calling SOUND:StopMusic()")
 		SOUND:StopMusic()
-	else
-		Trace("[A3Music] StopPreview: Calling SOUND:DimMusic(0, 0.3)")
-		SOUND:DimMusic(0, 0.3)
 	end
+	-- Note: Don't use DimMusic() here - it causes audio hiccups with PlayMusicPart streams.
+	-- For non-instant stops, let the screen transition handle the fade naturally.
 end
 
 local function PlayMenuMusic()
@@ -2667,6 +2672,8 @@ local function InputHandler(event)
 		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
 			MESSAGEMAN:Broadcast("Code", {PlayerNumber = pn, Name = mode})
 		end
+		-- Save panel mode preference
+		WritePrefToFile("A3Music_PanelMode", tostring(PanelModeIdx))
 		SOUND:PlayOnce(THEME:GetPathS("MusicWheel", "sort"))
 		return true
 	end
@@ -2681,6 +2688,7 @@ local function InputHandler(event)
 		elseif button == "Select" then
 			-- Open PlayerOptions overlay from difficulty selection
 			OptionsActive = true
+			SOUND:PlayOnce(THEME:GetPathS("ScreenSelectMusic", "swoosh"))
 			MESSAGEMAN:Broadcast("StartSelectingOptions")
 			return true
 		end
@@ -2712,6 +2720,7 @@ local function InputHandler(event)
 		elseif button == "Select" then
 			-- Open PlayerOptions overlay from diff picker
 			OptionsActive = true
+			SOUND:PlayOnce(THEME:GetPathS("ScreenSelectMusic", "swoosh"))
 			MESSAGEMAN:Broadcast("StartSelectingOptions")
 			return true
 		end
@@ -2721,6 +2730,7 @@ local function InputHandler(event)
 	-- Select button opens PlayerOptions overlay
 	if button == "Select" then
 		OptionsActive = true
+		SOUND:PlayOnce(THEME:GetPathS("ScreenSelectMusic", "swoosh"))
 		MESSAGEMAN:Broadcast("StartSelectingOptions")
 		return true
 	end
@@ -2775,9 +2785,10 @@ local t = Def.ActorFrame{
 			Trace("[ScreenA3Music] Applied ForceStyle: " .. storedStyle)
 		end
 
-		-- Show score panels by default (no toggle needed in this screen)
+		-- Apply saved panel mode (defaults to ClosePanes/hints if not saved)
+		local initialPanelMode = PanelModes[PanelModeIdx] or "ClosePanes"
 		for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
-			MESSAGEMAN:Broadcast("Code", {PlayerNumber = pn, Name = "OpenPanes3"})
+			MESSAGEMAN:Broadcast("Code", {PlayerNumber = pn, Name = initialPanelMode})
 		end
 
 		-- Store reference to pool root

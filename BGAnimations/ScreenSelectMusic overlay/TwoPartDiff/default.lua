@@ -276,22 +276,41 @@ local function DiffInputHandler(event)
 	local pn= event.PlayerNumber
 	local button = event.button
 	if event.type == "InputEventType_Release" then return end
-	--SOUND:PlayOnce(THEME:GetPathS("_MusicWheel","Change"),true)
-	if (button == "MenuUp" or button == "MenuLeft") and selection[pn] > 1 and GAMESTATE:IsPlayerEnabled(pn) and keyset[pn] ~= 1 then
-		SOUND:PlayOnce(THEME:GetPathS("","ScreenSelectMusic difficulty harder"));
-		selection[pn] = selection[pn] - 1
-		GAMESTATE:SetCurrentSteps(pn,songSteps[selection[pn]])
-		GAMESTATE:SetPreferredDifficulty(pn,songSteps[selection[pn]]:GetDifficulty())
-		adjustScrollerFrame(pn)
-		MESSAGEMAN:Broadcast("TwoDiffLeft"..pn)
-		return false;
-	elseif (button == "MenuDown" or button == "MenuRight") and selection[pn] < numDiffs and GAMESTATE:IsPlayerEnabled(pn) and keyset[pn] ~= 1 then
-		SOUND:PlayOnce(THEME:GetPathS("","ScreenSelectMusic difficulty harder"));
-		selection[pn] = selection[pn] + 1
-		GAMESTATE:SetCurrentSteps(pn,songSteps[selection[pn]])
-		GAMESTATE:SetPreferredDifficulty(pn,songSteps[selection[pn]]:GetDifficulty())
-		MESSAGEMAN:Broadcast("TwoDiffRight"..pn)
-		adjustScrollerFrame(pn)
+	if (button == "MenuUp" or button == "MenuDown") and GAMESTATE:IsPlayerEnabled(pn) and keyset[pn] ~= 1 then
+		-- Up/Down navigation in difficulty picker
+		if button == "MenuUp" and selection[pn] > 1 then
+			SOUND:PlayOnce(THEME:GetPathS("", "Master change"))
+			selection[pn] = selection[pn] - 1
+			GAMESTATE:SetCurrentSteps(pn,songSteps[selection[pn]])
+			GAMESTATE:SetPreferredDifficulty(pn,songSteps[selection[pn]]:GetDifficulty())
+			adjustScrollerFrame(pn)
+			MESSAGEMAN:Broadcast("TwoDiffLeft"..pn)
+		elseif button == "MenuDown" and selection[pn] < numDiffs then
+			SOUND:PlayOnce(THEME:GetPathS("", "Master change"))
+			selection[pn] = selection[pn] + 1
+			GAMESTATE:SetCurrentSteps(pn,songSteps[selection[pn]])
+			GAMESTATE:SetPreferredDifficulty(pn,songSteps[selection[pn]]:GetDifficulty())
+			MESSAGEMAN:Broadcast("TwoDiffRight"..pn)
+			adjustScrollerFrame(pn)
+		end
+		return true
+	elseif (button == "MenuLeft" or button == "MenuRight") and GAMESTATE:IsPlayerEnabled(pn) and keyset[pn] ~= 1 then
+		-- Left/Right also changes difficulty
+		if button == "MenuLeft" and selection[pn] > 1 then
+			SOUND:PlayOnce(THEME:GetPathS("", "ScreenSelectMusic difficulty harder"))
+			selection[pn] = selection[pn] - 1
+			GAMESTATE:SetCurrentSteps(pn,songSteps[selection[pn]])
+			GAMESTATE:SetPreferredDifficulty(pn,songSteps[selection[pn]]:GetDifficulty())
+			adjustScrollerFrame(pn)
+			MESSAGEMAN:Broadcast("TwoDiffLeft"..pn)
+		elseif button == "MenuRight" and selection[pn] < numDiffs then
+			SOUND:PlayOnce(THEME:GetPathS("", "ScreenSelectMusic difficulty harder"))
+			selection[pn] = selection[pn] + 1
+			GAMESTATE:SetCurrentSteps(pn,songSteps[selection[pn]])
+			GAMESTATE:SetPreferredDifficulty(pn,songSteps[selection[pn]]:GetDifficulty())
+			MESSAGEMAN:Broadcast("TwoDiffRight"..pn)
+			adjustScrollerFrame(pn)
+		end
 		return true;
 	elseif (button == "Start") and GAMESTATE:IsPlayerEnabled(pn) then
 		keyset[pn] = 1
