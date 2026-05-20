@@ -43,9 +43,15 @@ function retrieveMeterType()
 				OptionsP1P = string.gsub(OptionsP1P, "(4Lives,)", "");
 				OptionsP1P = OptionsP1P..","..failtype..",battery, 4 Lives";
 			else
-				-- Bar mode: apply theme fail setting
+				-- Bar mode: check if Flare gauge is active (use failoff) or normal (use theme failtype)
 				OptionsP1P = string.gsub(OptionsP1P, "(battery,)", "");
-				OptionsP1P = OptionsP1P..","..failtype;
+				local gaugeP1 = GetFlareGaugeSelection and GetFlareGaugeSelection(PLAYER_1) or "Normal"
+				local isFlareP1 = IsFlareGaugeType and IsFlareGaugeType(gaugeP1)
+				if isFlareP1 then
+					OptionsP1P = OptionsP1P..",failoff";
+				else
+					OptionsP1P = OptionsP1P..","..failtype;
+				end
 			end
 
 			if string.find(OptionsP2P,"1Lives") then
@@ -65,9 +71,15 @@ function retrieveMeterType()
 				OptionsP2P = string.gsub(OptionsP2P, "(4Lives,)", "");
 				OptionsP2P = OptionsP2P..","..failtype..",battery, 4 Lives";
 			else
-				-- Bar mode: apply theme fail setting
+				-- Bar mode: check if Flare gauge is active (use failoff) or normal (use theme failtype)
 				OptionsP2P = string.gsub(OptionsP2P, "(battery,)", "");
-				OptionsP2P = OptionsP2P..","..failtype;
+				local gaugeP2 = GetFlareGaugeSelection and GetFlareGaugeSelection(PLAYER_2) or "Normal"
+				local isFlareP2 = IsFlareGaugeType and IsFlareGaugeType(gaugeP2)
+				if isFlareP2 then
+					OptionsP2P = OptionsP2P..",failoff";
+				else
+					OptionsP2P = OptionsP2P..","..failtype;
+				end
 			end
 		end;
 
