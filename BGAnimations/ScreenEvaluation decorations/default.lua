@@ -90,7 +90,7 @@ for _,pn in pairs(GAMESTATE:GetEnabledPlayers()) do
 				t[#t+1] = Def.Sprite{
 					InitCommand=function(s)
 						s:Load(flarePath)
-						s:xy(pn==PLAYER_1 and _screen.cx-180 or _screen.cx+180, _screen.cy-85)
+						s:xy(pn==PLAYER_1 and _screen.cx-140 or _screen.cx+140, _screen.cy-105)
 						s:zoom(0.667)
 					end,
 					OnCommand=function(s) s:zoomy(0):sleep(0.5):linear(0.15):zoomy(0.667) end,
