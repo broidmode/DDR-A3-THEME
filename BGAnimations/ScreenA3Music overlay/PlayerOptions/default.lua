@@ -46,7 +46,32 @@ for i = 1, 32 do
 	else
 		label = string.format("%.2fx", mult)
 	end
-	SPEED_MODS[i] = { label = label, mod = string.format("*%g", mult) }
+	SPEED_MODS[i] = { label = label, mod = string.format("*%g", mult), mult = mult }
+end
+
+-- Real-speed target read BPM choices: 50..1200 in steps of 10.
+local REAL_BPM_MIN, REAL_BPM_MAX, REAL_BPM_STEP = 50, 1200, 10
+local REAL_BPMS = {}
+for bpm = REAL_BPM_MIN, REAL_BPM_MAX, REAL_BPM_STEP do
+	REAL_BPMS[#REAL_BPMS+1] = { label = bpm .. " BPM", bpm = bpm }
+end
+
+-- Speed type switch: classic multiplier vs. real (target-BPM) speed.
+local SPEED_TYPE_CHOICES = {
+	{ label = "MULTIPLIER", speedType = "multiplier" },
+	{ label = "REAL", speedType = "real" },
+}
+
+-- Map a multiplier / target BPM to its index within the choice lists.
+local function XModToIndex(x)
+	if not x then return 4 end  -- default 1.0x
+	local idx = math.floor(x / 0.25 + 0.5)
+	return math.max(1, math.min(idx, #SPEED_MODS))
+end
+local function RealBPMToIndex(bpm)
+	if not bpm then return 1 end
+	local idx = math.floor((bpm - REAL_BPM_MIN) / REAL_BPM_STEP + 0.5) + 1
+	return math.max(1, math.min(idx, #REAL_BPMS))
 end
 
 local ACCEL_CHOICES = {
@@ -147,24 +172,90 @@ local function GetOptionRows(pn)
 	local ps = GAMESTATE:GetPlayerState(pn)
 	local po = ps:GetPlayerOptions("ModsLevel_Preferred")
 
+	-- Current engine X-mod (re-fetched fresh; the preferred options object is
+	-- stable but this matches the defensive pattern used elsewhere).
+	local function CurXMod()
+		return ps:GetPlayerOptions("ModsLevel_Preferred"):XMod()
+	end
+
+	-- The first time we open options in multiplier mode, capture the engine's
+	-- restored multiplier as the manual value so toggling REAL<->MULTIPLIER can
+	-- restore it later (and so existing profiles aren't reset).
+	do
+		local prefs = GetPlayerSpeedPrefs(pn)
+		if prefs.speedType == "multiplier" and prefs.xmod == nil then
+			SetPlayerSpeedPrefs(pn, { xmod = CurXMod() })
+		end
+	end
+
+	-- Back-reference to the SPEED row, assigned after `rows` is built. Declared
+	-- here so the closures below capture it as an upvalue.
+	local speedRowRef
+
+	-- Point the SPEED row at the correct choice list + selection for a type.
+	local function ConfigureSpeedRow(speedType)
+		if not speedRowRef then return end
+		local prefs = GetPlayerSpeedPrefs(pn)
+		if speedType == "real" then
+			speedRowRef.choices = REAL_BPMS
+			speedRowRef.selected = RealBPMToIndex(prefs.realBPM)
+		else
+			speedRowRef.choices = SPEED_MODS
+			speedRowRef.selected = XModToIndex(prefs.xmod or CurXMod())
+		end
+	end
+
+	local initialSpeedType = GetPlayerSpeedPrefs(pn).speedType
+
 	local rows = {
 		{
-			name = "SPEED",
-			choices = SPEED_MODS,
-			selected = 4, -- Default to 1.0x
+			name = "SPEED TYPE",
+			choices = SPEED_TYPE_CHOICES,
+			selected = 1,
 			getValue = function()
-				local curPo = ps:GetPlayerOptions("ModsLevel_Preferred")
-				local speedmod = curPo:XMod()
-				if speedmod then
-					local idx = math.floor(speedmod / 0.25 + 0.5)
-					return math.max(1, math.min(idx, #SPEED_MODS))
-				end
-				return 4
+				return GetPlayerSpeedPrefs(pn).speedType == "real" and 2 or 1
 			end,
 			setValue = function(choice)
-				local curPo = ps:GetPlayerOptions("ModsLevel_Preferred")
-				local mult = choice * 0.25
-				curPo:XMod(mult)
+				local entry = SPEED_TYPE_CHOICES[choice]
+				if not entry then return end
+				local newType = entry.speedType
+				local prefs = GetPlayerSpeedPrefs(pn)
+				if newType == prefs.speedType then return end
+				-- Preserve the manual multiplier across the switch out of mult mode.
+				if prefs.speedType == "multiplier" and prefs.xmod == nil then
+					SetPlayerSpeedPrefs(pn, { xmod = CurXMod() })
+				end
+				SetPlayerSpeedPrefs(pn, { speedType = newType })
+				ConfigureSpeedRow(newType)
+				RealSpeed_Apply(pn)
+			end,
+		},
+		{
+			name = "SPEED",
+			choices = (initialSpeedType == "real") and REAL_BPMS or SPEED_MODS,
+			selected = 4, -- overwritten by getValue() during init
+			getValue = function()
+				local prefs = GetPlayerSpeedPrefs(pn)
+				if prefs.speedType == "real" then
+					return RealBPMToIndex(prefs.realBPM)
+				end
+				return XModToIndex(prefs.xmod or CurXMod())
+			end,
+			setValue = function(choice)
+				local prefs = GetPlayerSpeedPrefs(pn)
+				if prefs.speedType == "real" then
+					local entry = REAL_BPMS[choice]
+					if entry then
+						SetPlayerSpeedPrefs(pn, { realBPM = entry.bpm })
+						RealSpeed_Apply(pn)  -- derive multiplier for current song
+					end
+				else
+					local entry = SPEED_MODS[choice]
+					if entry then
+						SetPlayerSpeedPrefs(pn, { xmod = entry.mult })
+						ps:GetPlayerOptions("ModsLevel_Preferred"):XMod(entry.mult)
+					end
+				end
 			end,
 		},
 		{
@@ -396,6 +487,11 @@ local function GetOptionRows(pn)
 		}
 	end
 
+	-- Resolve the SPEED row back-reference so ConfigureSpeedRow can retarget it.
+	for _, row in ipairs(rows) do
+		if row.name == "SPEED" then speedRowRef = row end
+	end
+
 	-- Initialize selections from current values
 	for _, row in ipairs(rows) do
 		row.selected = row.getValue()
@@ -408,8 +504,25 @@ end
 -- BUILD THE OPTION FRAME FOR A PLAYER
 -- ============================================================================
 
--- Helper to calculate BPM display for speed row
-local function GetBPMDisplayText(pn, speedMult)
+-- Effective multiplier represented by the SPEED row's current selection.
+-- In multiplier mode this is the chosen X-mod; in real mode it is derived from
+-- the chosen target BPM and the current song's dominant BPM (rounded to 0.01).
+-- Returns (mult, isReal); mult may be nil if it can't be determined.
+local function CurrentSpeedMult(pn, speedRow)
+	local prefs = GetPlayerSpeedPrefs(pn)
+	if prefs.speedType == "real" then
+		local entry = speedRow.choices[speedRow.selected]
+		local target = (entry and entry.bpm) or prefs.realBPM
+		local dom = GetDominantBPMForPlayer(pn)
+		return dom and RealSpeed_ComputeMult(target, dom) or nil, true
+	else
+		local entry = speedRow.choices[speedRow.selected]
+		return (entry and entry.mult) or 1.0, false
+	end
+end
+
+-- Text for the "CURRENT BPM" panel shown above the SPEED row.
+local function GetSpeedPanelText(pn, speedRow)
 	local song = GAMESTATE:GetCurrentSong()
 	if not song then return "?" end
 
@@ -428,17 +541,26 @@ local function GetBPMDisplayText(pn, speedMult)
 
 	local bpmMin = bpms[1]
 	local bpmMax = bpms[2]
-	local BPM1Mod = math.floor(bpmMin * speedMult + 0.5)
 
+	local mult, isReal = CurrentSpeedMult(pn, speedRow)
+	if not mult then return "?" end
+
+	local lo = math.floor(bpmMin * mult + 0.5)
 	if bpmMin == bpmMax then
-		return tostring(BPM1Mod)
-	else
-		local dominant = GetDominantBPM and GetDominantBPM(song) or bpmMin
-		local bpmMed = dominant or bpmMin
-		local BPM2Mod = math.floor(bpmMed * speedMult + 0.5)
-		local BPM3Mod = math.floor(bpmMax * speedMult + 0.5)
-		return BPM1Mod.." - "..BPM2Mod.." - "..BPM3Mod
+		-- Constant BPM: single read value (+ multiplier in real mode).
+		if isReal then
+			return string.format("%d  (x%.2f)", lo, mult)
+		end
+		return tostring(lo)
 	end
+
+	local dominant = GetDominantBPMForPlayer(pn) or bpmMin
+	local mid = math.floor(dominant * mult + 0.5)
+	local hi = math.floor(bpmMax * mult + 0.5)
+	if isReal then
+		return string.format("%d - %d - %d  (x%.2f)", lo, mid, hi, mult)
+	end
+	return lo .. " - " .. mid .. " - " .. hi
 end
 
 local function MakeRow(pn, rowIndex, optionRows)
@@ -482,12 +604,10 @@ local function MakeRow(pn, rowIndex, optionRows)
 				Name = "BPMValue",
 				InitCommand = function(s)
 					s:x(65):zoom(0.9)
-					local speedMult = row.selected * 0.25
-					s:settext(GetBPMDisplayText(pn, speedMult))
+					s:settext(GetSpeedPanelText(pn, row))
 				end,
 				RefreshCommand = function(s)
-					local speedMult = row.selected * 0.25
-					s:settext(GetBPMDisplayText(pn, speedMult))
+					s:settext(GetSpeedPanelText(pn, row))
 				end,
 			},
 		} or Def.Actor{},
@@ -559,7 +679,7 @@ local function MakeRow(pn, rowIndex, optionRows)
 				local choice = row.choices[row.selected]
 				if choice then
 					s:settext(choice.label)
-					if row.selected == 1 or (row.name == "SPEED" and row.selected == 4) then
+					if ((row.name == "SPEED" and GetPlayerSpeedPrefs(pn).speedType ~= "real" and choice.mult == 1.0) or (row.name ~= "SPEED" and row.selected == 1)) then
 						s:diffuse(color("#06ff06")):diffusetopedge(color("#74ff74"))
 					elseif choice.label == "LIFE4" or choice.label == "RISKY" then
 						s:diffuse(color("#ff0606")):diffusetopedge(color("#ff7474"))
@@ -574,7 +694,7 @@ local function MakeRow(pn, rowIndex, optionRows)
 				local choice = row.choices[row.selected]
 				if choice then
 					s:settext(choice.label)
-					if row.selected == 1 or (row.name == "SPEED" and row.selected == 4) then
+					if ((row.name == "SPEED" and GetPlayerSpeedPrefs(pn).speedType ~= "real" and choice.mult == 1.0) or (row.name ~= "SPEED" and row.selected == 1)) then
 						s:diffuse(color("#06ff06")):diffusetopedge(color("#74ff74"))
 					elseif choice.label == "LIFE4" or choice.label == "RISKY" then
 						s:diffuse(color("#ff0606")):diffusetopedge(color("#ff7474"))
@@ -652,7 +772,8 @@ local function BuildOptionsFrame(pn)
 				if row then
 					-- Simple explanations
 					local explanations = {
-						SPEED = "Adjust scroll speed multiplier.",
+						["SPEED TYPE"] = "MULTIPLIER: pick an X-mod.\nREAL: target BPM, set per song.",
+						SPEED = "Adjust scroll speed.\nReal mode anchors to dominant BPM.",
 						ACCEL = "Change arrow acceleration patterns.",
 						APPEARANCE = "Control arrow visibility timing.",
 						TURN = "Rotate or shuffle arrow directions.",
@@ -693,6 +814,21 @@ local function RefreshRow(pn, rowIndex)
 			if bpmValue then
 				bpmValue:playcommand("Refresh")
 			end
+		end
+	end
+end
+
+-- Refresh the row whose definition has the given name (used so toggling SPEED
+-- TYPE updates the dependent SPEED row + its BPM panel).
+local function RefreshRowByName(pn, name)
+	local frame = optionFrames[pn]
+	if not frame then return end
+	local optionRows = frame.optionRows
+	if not optionRows then return end
+	for i, r in ipairs(optionRows) do
+		if r.name == name then
+			RefreshRow(pn, i)
+			return
 		end
 	end
 end
@@ -762,6 +898,8 @@ local function OptionsInputHandler(event)
 			row.selected = row.selected - 1
 			row.setValue(row.selected)
 			RefreshRow(pn, currentRow[pn])
+			-- Changing the speed type reconfigures the dependent SPEED row.
+			if row.name == "SPEED TYPE" then RefreshRowByName(pn, "SPEED") end
 		end
 		return true
 
@@ -771,6 +909,7 @@ local function OptionsInputHandler(event)
 			row.selected = row.selected + 1
 			row.setValue(row.selected)
 			RefreshRow(pn, currentRow[pn])
+			if row.name == "SPEED TYPE" then RefreshRowByName(pn, "SPEED") end
 		end
 		return true
 

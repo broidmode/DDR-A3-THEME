@@ -3056,6 +3056,22 @@ local PlayerOptionsContainer = Def.ActorFrame{
 t[#t + 1] = PlayerOptionsContainer
 
 -- ============================================================================
+-- REAL SPEED RE-ANCHOR
+-- In real-speed mode the X-mod is derived from each song's dominant BPM, so it
+-- must be recomputed whenever the selected song or chart changes. (No-op in
+-- multiplier mode beyond re-asserting the stored manual value.)
+-- ============================================================================
+t[#t + 1] = Def.Actor{
+	OnCommand = function(s) s:queuecommand("ReAnchor") end,
+	CurrentSongChangedMessageCommand = function(s) s:queuecommand("ReAnchor") end,
+	CurrentStepsP1ChangedMessageCommand = function(s) s:queuecommand("ReAnchor") end,
+	CurrentStepsP2ChangedMessageCommand = function(s) s:queuecommand("ReAnchor") end,
+	ReAnchorCommand = function(s)
+		if RealSpeed_ApplyAll then RealSpeed_ApplyAll() end
+	end,
+}
+
+-- ============================================================================
 -- FOOTER (bottom - "SELECT MUSIC" text)
 -- ============================================================================
 t[#t + 1] = Def.ActorFrame{

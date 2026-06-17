@@ -63,17 +63,15 @@ function SameDiffSteps(song, pn)
 	end;
 end;
 
--- Calculate the dominant BPM of a song (weighted by time spent at each BPM).
--- Returns the BPM that occupies the most total time in the song.
-function GetDominantBPM(song)
-	if not song then return nil end
-	local td = song:GetTimingData()
+-- Core: dominant BPM from a TimingData object (weighted by real time spent at
+-- each BPM). lastBeat bounds the final BPM segment. Returns the BPM that
+-- occupies the most total time, or nil if it can't be determined.
+function GetDominantBPMFromTiming(td, lastBeat)
 	if not td then return nil end
 
 	local segments = td:GetBPMsAndTimes(true)  -- {{beat, bpm}, ...}
 	if not segments or #segments == 0 then return nil end
 
-	local lastBeat = song:GetLastBeat()
 	if not lastBeat or lastBeat <= 0 then return nil end
 
 	-- Accumulate seconds spent at each BPM (rounded to 0.1 for bucketing)
@@ -103,6 +101,24 @@ function GetDominantBPM(song)
 	end
 
 	return bestBPM
+end
+
+-- Calculate the dominant BPM of a song (weighted by time spent at each BPM).
+-- Returns the BPM that occupies the most total time in the song.
+function GetDominantBPM(song)
+	if not song then return nil end
+	return GetDominantBPMFromTiming(song:GetTimingData(), song:GetLastBeat())
+end
+
+-- Dominant BPM for a specific player's currently selected steps. Uses the
+-- chart's own timing data when available (so split-timing charts anchor to
+-- their real BPM distribution) and falls back to song-level timing.
+function GetDominantBPMForPlayer(pn)
+	local song = GAMESTATE:GetCurrentSong()
+	if not song then return nil end
+	local steps = GAMESTATE:GetCurrentSteps(pn)
+	local td = steps and steps:GetTimingData() or song:GetTimingData()
+	return GetDominantBPMFromTiming(td, song:GetLastBeat())
 end
 
 function MachineOrProfile(pn)

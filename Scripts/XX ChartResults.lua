@@ -287,6 +287,18 @@ local function SerializePrefs(tbl)
 	if tbl.gaugeType then
 		lines[#lines+1] = string.format('  gaugeType = %q,', tbl.gaugeType)
 	end
+	-- Speed preference: persists across songs and sessions.
+	-- speedType = "multiplier" | "real"; xmod = manual multiplier;
+	-- realBPM = target read BPM for real-speed mode.
+	if tbl.speedType then
+		lines[#lines+1] = string.format('  speedType = %q,', tbl.speedType)
+	end
+	if type(tbl.xmod) == "number" then
+		lines[#lines+1] = string.format('  xmod = %s,', tostring(tbl.xmod))
+	end
+	if type(tbl.realBPM) == "number" then
+		lines[#lines+1] = string.format('  realBPM = %s,', tostring(tbl.realBPM))
+	end
 	lines[#lines+1] = "}"
 	return table.concat(lines, "\n")
 end
@@ -391,6 +403,54 @@ function SetPlayerGaugePref(pn, gaugeType)
 			SavePlayerPrefs(pn, dir)
 		else
 			Trace("[PlayerPrefs] No profile dir for " .. tostring(pn))
+		end
+	end
+end
+
+-- ===== SPEED PREFERENCE (multiplier vs. real-speed) =====
+-- Defaults applied when a profile has no stored speed preference yet.
+SPEED_PREF_DEFAULTS = { speedType = "multiplier", realBPM = 400 }
+
+-- Ensure PlayerPrefsData[pn] is populated from the profile (lazy load).
+local function EnsurePlayerPrefsLoaded(pn)
+	if PlayerPrefsData[pn] then return end
+	local slot = ({[PLAYER_1]='ProfileSlot_Player1', [PLAYER_2]='ProfileSlot_Player2'})[pn]
+	if slot then
+		local dir = PROFILEMAN:GetProfileDir(slot)
+		if dir and dir ~= "" then
+			LoadPlayerPrefs(pn, dir)
+		end
+	end
+	if not PlayerPrefsData[pn] then PlayerPrefsData[pn] = {} end
+end
+
+-- Returns the stored speed preference for a player, with defaults filled in.
+-- { speedType = "multiplier"|"real", xmod = number|nil, realBPM = number }
+function GetPlayerSpeedPrefs(pn)
+	EnsurePlayerPrefsLoaded(pn)
+	local data = PlayerPrefsData[pn] or {}
+	return {
+		speedType = data.speedType or SPEED_PREF_DEFAULTS.speedType,
+		xmod = type(data.xmod) == "number" and data.xmod or nil,
+		realBPM = type(data.realBPM) == "number" and data.realBPM or SPEED_PREF_DEFAULTS.realBPM,
+	}
+end
+
+-- Merges the given fields into the stored speed preference and immediately
+-- saves to the player's profile directory. `fields` may contain any of
+-- speedType, xmod, realBPM.
+function SetPlayerSpeedPrefs(pn, fields)
+	EnsurePlayerPrefsLoaded(pn)
+	local data = PlayerPrefsData[pn]
+	if fields.speedType ~= nil then data.speedType = fields.speedType end
+	if fields.xmod ~= nil then data.xmod = fields.xmod end
+	if fields.realBPM ~= nil then data.realBPM = fields.realBPM end
+
+	local slot = ({[PLAYER_1]='ProfileSlot_Player1', [PLAYER_2]='ProfileSlot_Player2'})[pn]
+	if slot then
+		local dir = PROFILEMAN:GetProfileDir(slot)
+		if dir and dir ~= "" then
+			SavePlayerPrefs(pn, dir)
 		end
 	end
 end
