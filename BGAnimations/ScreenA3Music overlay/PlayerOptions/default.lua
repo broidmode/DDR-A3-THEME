@@ -180,11 +180,16 @@ local function GetOptionRows(pn)
 
 	-- The first time we open options in multiplier mode, capture the engine's
 	-- restored multiplier as the manual value so toggling REAL<->MULTIPLIER can
-	-- restore it later (and so existing profiles aren't reset).
+	-- restore it later (and so existing profiles aren't reset). XMod() returns
+	-- nil for a profile restored on a C-mod/M-mod; in that case capture nothing
+	-- (leave the engine speed untouched) rather than writing a bogus value. The
+	-- captured value is snapped to the row's 0.25 grid so the display, the stored
+	-- pref, and the applied X-mod always agree.
 	do
 		local prefs = GetPlayerSpeedPrefs(pn)
-		if prefs.speedType == "multiplier" and prefs.xmod == nil then
-			SetPlayerSpeedPrefs(pn, { xmod = CurXMod() })
+		local cur = CurXMod()
+		if prefs.speedType == "multiplier" and prefs.xmod == nil and type(cur) == "number" then
+			SetPlayerSpeedPrefs(pn, { xmod = SPEED_MODS[XModToIndex(cur)].mult })
 		end
 	end
 
@@ -221,11 +226,17 @@ local function GetOptionRows(pn)
 				local newType = entry.speedType
 				local prefs = GetPlayerSpeedPrefs(pn)
 				if newType == prefs.speedType then return end
-				-- Preserve the manual multiplier across the switch out of mult mode.
-				if prefs.speedType == "multiplier" and prefs.xmod == nil then
-					SetPlayerSpeedPrefs(pn, { xmod = CurXMod() })
-				end
 				SetPlayerSpeedPrefs(pn, { speedType = newType })
+				-- Entering multiplier mode without a stored manual value (e.g. a
+				-- profile whose default was real): adopt the current grid-snapped
+				-- engine X-mod so the row, the stored pref, and the applied value
+				-- all agree instead of silently diverging.
+				if newType == "multiplier" and GetPlayerSpeedPrefs(pn).xmod == nil then
+					local cur = CurXMod()
+					if type(cur) == "number" then
+						SetPlayerSpeedPrefs(pn, { xmod = SPEED_MODS[XModToIndex(cur)].mult })
+					end
+				end
 				ConfigureSpeedRow(newType)
 				RealSpeed_Apply(pn)
 			end,

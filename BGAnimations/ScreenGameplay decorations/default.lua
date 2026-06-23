@@ -24,6 +24,17 @@ t[#t+1] = Def.Actor{
 	end,
 }
 
+-- Real-speed: re-derive the X-mod for each (course) song as it finishes loading
+-- so it reads at the player's target BPM. DoneLoadingNextSong fires after each
+-- song's setup (first and every subsequent course song), with the new song/steps
+-- current. No-op outside real-speed mode.
+t[#t+1] = Def.Actor{
+	Name = "RealSpeedGameplay",
+	DoneLoadingNextSongMessageCommand = function(self)
+		if RealSpeed_ApplyGameplayAll then RealSpeed_ApplyGameplayAll() end
+	end,
+}
+
 t[#t+1] = StatsEngine()
 
 -- Track frozen scores when Flare gauge fails (stop accumulating)

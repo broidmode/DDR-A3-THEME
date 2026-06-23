@@ -74,15 +74,28 @@ function GetDominantBPMFromTiming(td, lastBeat)
 
 	if not lastBeat or lastBeat <= 0 then return nil end
 
-	-- Accumulate seconds spent at each BPM (rounded to 0.1 for bucketing)
+	-- Accumulate seconds spent at each BPM (rounded to 0.1 for bucketing).
+	-- "Real-world time" is what we want, so prefer the engine's elapsed-time
+	-- mapping (which folds in stops/delays/warps) and only fall back to pure
+	-- beat math when that API isn't available.
 	local timeAtBPM = {}
 	for i, seg in ipairs(segments) do
 		local beatStart = seg[1]
 		local bpm = seg[2]
 		local beatEnd = (segments[i+1] and segments[i+1][1]) or lastBeat
-		local beatSpan = beatEnd - beatStart
-		if beatSpan > 0 and bpm > 0 then
-			local seconds = beatSpan / bpm * 60.0
+		if beatEnd > beatStart and bpm > 0 then
+			local seconds
+			local ok, t0, t1 = pcall(function()
+				return td:GetElapsedTimeFromBeat(beatStart), td:GetElapsedTimeFromBeat(beatEnd)
+			end)
+			if ok and type(t0) == "number" and type(t1) == "number" then
+				-- API succeeded. A warp makes the span consume ~0 real time
+				-- (t1 <= t0), so credit 0 rather than phantom beat-math seconds.
+				seconds = math.max(0, t1 - t0)
+			else
+				-- Elapsed-time API unavailable: fall back to pure beat math.
+				seconds = (beatEnd - beatStart) / bpm * 60.0
+			end
 			local key = string.format("%.1f", bpm)
 			if not timeAtBPM[key] then
 				timeAtBPM[key] = { seconds = 0, bpm = bpm }

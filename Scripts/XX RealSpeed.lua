@@ -71,3 +71,44 @@ function RealSpeed_ApplyAll()
 		RealSpeed_Apply(pn)
 	end
 end
+
+-- Apply the derived multiplier LIVE during gameplay (real mode only). Intended
+-- to be called on DoneLoadingNextSong, which fires after each (course) song's
+-- setup with the newly-loaded song/steps current -- so each course song
+-- re-anchors to its own dominant BPM, and it isn't clobbered by SetupSong's
+-- snap-to-Stage.
+--
+-- We set ONLY the X-mod, on every mods level. Setting it on the object (rather
+-- than SetPlayerOptions with a string) avoids a flat Assign that would overwrite
+-- the Song/Stage levels and wipe course-defined per-song MODS / attacks; setting
+-- every level (incl. Current) is required for the change to reach the live
+-- options mid-song. This mirrors the engine's own ArbitrarySpeedMods in
+-- _fallback/Scripts/03 CustomSpeedMods.lua ("modify stage, song and current too
+-- so this will work").
+local GAMEPLAY_MODS_LEVELS = {
+	"ModsLevel_Preferred", "ModsLevel_Stage", "ModsLevel_Song", "ModsLevel_Current",
+}
+
+function RealSpeed_ApplyGameplay(pn)
+	if not pn then return end
+	if not GAMESTATE:IsPlayerEnabled(pn) then return end
+	local prefs = GetPlayerSpeedPrefs(pn)
+	if prefs.speedType ~= "real" then return end  -- multiplier mode is constant
+
+	local mult = RealSpeed_DerivedMult(pn)
+	if not mult then return end
+
+	local ps = GAMESTATE:GetPlayerState(pn)
+	if not ps then return end
+
+	for _, lvl in ipairs(GAMEPLAY_MODS_LEVELS) do
+		local po = ps:GetPlayerOptions(lvl)
+		if po then po:XMod(mult) end
+	end
+end
+
+function RealSpeed_ApplyGameplayAll()
+	for _, pn in ipairs(GAMESTATE:GetEnabledPlayers()) do
+		RealSpeed_ApplyGameplay(pn)
+	end
+end
