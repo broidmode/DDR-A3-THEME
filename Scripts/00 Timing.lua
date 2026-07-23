@@ -21,14 +21,15 @@ local TimingPrefKeys = {
 -- DDR A3 timing values
 -- W5 is set to 150ms for auto-miss timing, but the judgment itself is disabled per-player
 local DDRA3Timing = {
-	TimingWindowSecondsW1   = 0.01667,  -- ±16.67ms Marvelous
-	TimingWindowSecondsW2   = 0.03333,  -- ±33.33ms Perfect
-	TimingWindowSecondsW3   = 0.08333,  -- ±83.33ms Great
-	TimingWindowSecondsW4   = 0.12000,  -- ±120.00ms Good
-	TimingWindowSecondsW5   = 0.15000,  -- ±150.00ms (disabled, for auto-miss timing only)
-	TimingWindowSecondsHold = 0.25000,  -- Hold checkpoint window
-	TimingWindowSecondsMine = 0.01667,  -- ±16.67ms shock arrows (symmetric fallback)
-	TimingWindowSecondsRoll = 0.50000,  -- Roll checkpoint window
+	TimingWindowSecondsW1   = 0.017,  -- ±17ms Marvelous
+	TimingWindowSecondsW2   = 0.034,  -- ±34ms Perfect
+	TimingWindowSecondsW3   = 0.084,  -- ±84ms Great
+	TimingWindowSecondsW4   = 0.124,  -- ±124ms Good
+	TimingWindowSecondsW5   = 0.160,  -- ±160ms (disabled, for auto-miss timing only)
+	TimingWindowSecondsHold = 0.300,  -- Hold checkpoint window
+	TimingWindowSecondsMine = 0.008,  -- ±8ms shock arrows (actual DDR WORLD is extremely
+									  -- lenient, if you RELEASE in window [-34ms,+84ms] you get an OK)
+	TimingWindowSecondsRoll = 0.500,  -- Roll checkpoint window
 	TimingWindowAdd         = 0,        -- No additional timing leniency
 	RegenComboAfterMiss     = 0,        -- No combo regen (DDR behavior)
 	MaxRegenComboAfterMiss  = 0,        -- No combo regen (DDR behavior)
