@@ -891,24 +891,35 @@ function OptionRowSongSorting()
 		SelectType = "SelectOne";
 		OneChoiceForAllPlayers = true;
 		ExportOnChange = false;
-		Choices = {"Romaji", "DDR A3", "DDR WORLD"};
+		Choices = {"Romaji", "DDR A3", "DDR WORLD", "Shuffle"};
 		LoadSelections = function(self, list, pn)
 			local pref = ThemePrefs.Get("JapaneseSorting")
 			if pref == "jn" then
 				list[2] = true
 			elseif pref == "ln" then
 				list[3] = true
+			elseif pref == "shuffle" then
+				list[4] = true
 			else
 				list[1] = true
 			end
 		end;
 		SaveSelections = function(self, list, pn)
+			local newPref
 			if list[2] then
-				ThemePrefs.Set("JapaneseSorting", "jn")
+				newPref = "jn"
 			elseif list[3] then
-				ThemePrefs.Set("JapaneseSorting", "ln")
+				newPref = "ln"
+			elseif list[4] then
+				newPref = "shuffle"
 			else
-				ThemePrefs.Set("JapaneseSorting", "romaji")
+				newPref = "romaji"
+			end
+
+			local oldPref = ThemePrefs.Get("JapaneseSorting")
+			if oldPref ~= newPref then
+				ThemePrefs.Set("JapaneseSorting", newPref)
+				GenerateA3ShuffleSeed()
 			end
 			ThemePrefs.Save()
 		end;

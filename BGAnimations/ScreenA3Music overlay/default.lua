@@ -161,18 +161,94 @@ local function StartsWithDigit(s)
 	return b and b >= 48 and b <= 57  -- '0'..'9'
 end
 
+local function GetSongSortingMode()
+	local mode = GetA3Pref("JapaneseSorting") or "romaji"
+
+	-- Migrate legacy values.
+	if mode == "first" then mode = "nl" end
+	if mode == "last"  then mode = "nj" end
+
+	return mode
+end
+
+-- Shuffle helpers use a private Park-Miller PRNG. This keeps folder order
+-- deterministic without calling math.randomseed() or consuming global random
+-- values whenever ScreenA3Music rebuilds a list.
+local SHUFFLE_MODULUS = 2147483647
+
+local function StableSongKey(song)
+	local dir = song:GetSongDir()
+	if dir and dir ~= "" then return dir end
+	return song:GetTranslitMainTitle()
+end
+
+local function StableLevelEntryKey(entry)
+	local steps = entry[2]
+	return table.concat({
+		StableSongKey(entry[1]),
+		tostring(steps:GetHash()),
+		tostring(steps:GetStepsType()),
+		tostring(steps:GetDifficulty()),
+		tostring(steps:GetDescription()),
+		tostring(steps:GetChartName()),
+	}, "\31")
+end
+
+local function ShuffleStateForScope(scope)
+	local seed = GetA3ShuffleSeed and GetA3ShuffleSeed()
+		or tonumber(GetA3Pref("ShuffleSeed")) or 1
+	local state = math.floor(seed) % SHUFFLE_MODULUS
+	if state <= 0 then state = 1 end
+
+	-- Give every folder its own deterministic stream.
+	for i = 1, #scope do
+		state = (state * 33 + scope:byte(i)) % SHUFFLE_MODULUS
+		if state == 0 then state = 1 end
+	end
+	return state
+end
+
+local function NextShuffleState(state)
+	-- Schrage's method avoids overflow for the Park-Miller multiplier.
+	local high = math.floor(state / 127773)
+	local low = state % 127773
+	local nextState = 16807 * low - 2836 * high
+	if nextState <= 0 then nextState = nextState + SHUFFLE_MODULUS end
+	return nextState
+end
+
+local function DeterministicShuffle(items, scope, stableKey)
+	local canonical = {}
+	for i, item in ipairs(items) do
+		canonical[i] = { item = item, key = stableKey(item) }
+	end
+
+	-- Precompute stable IDs before sorting so Lua does not repeatedly call
+	-- engine methods from inside the comparator.
+	table.sort(canonical, function(a, b)
+		return a.key < b.key
+	end)
+
+	local out = {}
+	for i, keyed in ipairs(canonical) do out[i] = keyed.item end
+
+	local state = ShuffleStateForScope(scope)
+	for i = #out, 2, -1 do
+		state = NextShuffleState(state)
+		local j = (state % i) + 1
+		out[i], out[j] = out[j], out[i]
+	end
+	return out
+end
+
 -- Returns a sort-key string that groups songs by category bucket first,
 -- then alphabetically within each bucket.
 -- Bucket prefixes: "0" = first priority, "1" = middle, "2" = last priority.
 local function SortKey(song)
 	local translit = song:GetTranslitMainTitle():lower()
-	local jpMode = GetA3Pref("JapaneseSorting") or "romaji"
+	local jpMode = GetSongSortingMode()
 
-	-- Migrate legacy values
-	if jpMode == "first" then jpMode = "nl" end
-	if jpMode == "last"  then jpMode = "nj" end
-
-	if jpMode == "romaji" then
+	if jpMode == "romaji" or jpMode == "shuffle" then
 		return translit
 	end
 
@@ -198,7 +274,11 @@ local function SortKey(song)
 	return prefix .. translit
 end
 
-local function SortSongs(songs)
+local function SortSongs(songs, scope)
+	if GetSongSortingMode() == "shuffle" then
+		return DeterministicShuffle(songs, "category:" .. scope, StableSongKey)
+	end
+
 	local keyed = {}
 	for i, song in ipairs(songs) do
 		keyed[i] = { song = song, key = SortKey(song) }
@@ -226,7 +306,7 @@ local function BuildFlatList()
 		list[#list+1] = grp
 
 		if grp == OpenGroup then
-			local songs = SortSongs(SONGMAN:GetSongsInGroup(grp))
+			local songs = SortSongs(SONGMAN:GetSongsInGroup(grp), grp)
 			for _, song in ipairs(songs) do
 				local stType = GAMESTATE:GetCurrentStyle():GetStepsType()
 				local allSteps = song:GetStepsByStepsType(stType)
@@ -294,11 +374,20 @@ local function BuildFlatListByLevel()
 		list[#list+1] = headerName
 
 		if headerName == OpenGroup then
-			-- Sort songs within level by title
-			local songs = levelBuckets[level]
-			table.sort(songs, function(a, b)
-				return SortKey(a[1]) < SortKey(b[1])
-			end)
+			local songs
+			if GetSongSortingMode() == "shuffle" then
+				songs = DeterministicShuffle(
+					levelBuckets[level],
+					"level:" .. tostring(level),
+					StableLevelEntryKey
+				)
+			else
+				-- Sort songs within level by title.
+				songs = levelBuckets[level]
+				table.sort(songs, function(a, b)
+					return SortKey(a[1]) < SortKey(b[1])
+				end)
+			end
 			for _, entry in ipairs(songs) do
 				list[#list+1] = entry
 			end
